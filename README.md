@@ -54,11 +54,19 @@ Brief önce veriyi, en sonda kuralları ve çıktı formatını verir. Kurallar 
 - Az maçlı winrate'e güvenmeme
 - Çeşitlilik ve tek bir main'e bağımlılığın sorgulanması
 
-İstenen çıktı kısa ve özdür: 3 comp yerine **15-20 farklı wombo çekirdeği** (en az 15). Çekirdek, ultileri birbirine zincirlenen 3-5 kişilik bir gruptur; çoğu 3 ya da 4 kişiliktir, tam 5'li en fazla birkaç tane. Kalan oyuncular serbesttir ya da isteğe bağlı bir öneri alır. Her çekirdek tek bir tablo satırıdır:
+İstenen çıktı kısa ve özdür: **15-20 farklı öneri** (en az 15). Yaklaşık yarısı rolleri tek tek dolu **5'li comp**, kalanı 3-4 kişilik **wombo çekirdeği**. Çekirdekte olmayan oyuncular serbesttir ya da isteğe bağlı bir öneri alır. Numaralar iki tablo boyunca devam eder.
+
+5'li comp'lar:
+
+| # | Tip | Top | Jungle | Mid | ADC | Support | Sesli komut | Wombo | Obje | Keyif | Not |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | Sağlam | JoniLeşh Cho'Gath | civaHg Amumu | Luminary Yasuo | ŁĄÎŒÏ Xayah | Ali MF | Amumu R → Cho Q → Yasuo R → MF R | 5 | 3 | 4 | Cho Q stun içinde garanti |
+
+Wombo çekirdekleri:
 
 | # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Wombo | Obje | Keyif | Not |
 |---|---|---|---|---|---|---|---|---|
-| 1 | Sağlam | civaHg Amumu (Jg) + Ali MF (Sup) + Lao Jhin (ADC) | Amumu R → Jhin W → MF R | Top, Mid (isteğe bağlı: Joni Kennen) | 5 | 3 | 4 | ikili 14 maç %71 |
+| 10 | Sağlam | civaHg Amumu (Jg) + Ali MF (Sup) + Lao Jhin (ADC) | Amumu R → Jhin W → MF R | Top, Mid (isteğe bağlı: Joni Kennen) | 5 | 3 | 4 | ikili 14 maç %71 |
 
 Puanlar 1-5 arası:
 - **Wombo:** ulti zincirinin gücü

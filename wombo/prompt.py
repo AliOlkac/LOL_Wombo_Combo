@@ -33,7 +33,7 @@ CORE_COUNT = "15-20"  # tek seferde istenen wombo çekirdeği sayısı
 MIN_CORES = 15
 
 EXPERIMENTAL = """
-## Deneysel çekirdek ne demek
+## Deneysel öneri ne demek
 Lane ve meta kalıplarına sıkışma: "troll görünür ama mekanik olarak tutarlı" fikirler. Örnekler:
 iki AP bot, ADC'siz diziliş, iki support, mid'de ADC ya da support şampiyonu, top'ta ranged ya da
 support şampiyonu, erken 5'li baskın, funnel, lane swap. Şampiyonlar yine havuzdan gelir (Esnek
@@ -59,12 +59,14 @@ def task_intro(mode="karma", patch=None):
 
 Sen deneyimli bir League of Legends koçu ve analistisin. Türkçe, **kısa ve öz** cevap ver.
 Aşağıda 5 kişilik premade takımımızın gerçek maç verisi var ({source}).
-Bize **{CORE_COUNT} farklı wombo çekirdeği** öner (en az {MIN_CORES}; 3-4 comp ile yetinme). {mix}
+Bize **{CORE_COUNT} farklı öneri** ver (en az {MIN_CORES}; 3-4 comp ile yetinme): **yaklaşık
+yarısı tam 5'li comp**, kalanı 3-4 kişilik wombo çekirdeği. {mix}
 
-**Wombo çekirdeği:** 3-5 oyuncudan oluşan, ultileri ve CC'leri birbirine zincirlenen grup: AoE
-engage, havaya kaldırma/çekme ve AoE hasar. **Çoğu 3 ya da 4 kişilik olsun**; tam 5'li en fazla
-birkaç tane. Çekirdekte olmayan oyuncular serbesttir, kendi rollerinde rahat ettikleri şampiyonu
-alırlar.
+Hepsi wombo combo üzerine kurulu olsun: ultilerin ve CC'lerin birbirine zincirlendiği AoE engage,
+havaya kaldırma/çekme ve AoE hasar.
+- **5'li comp:** beş oyuncunun da rolü ve şampiyonu belli; beşi de aynı zincire hizmet eder.
+- **Wombo çekirdeği (3-4 kişi):** zincirin kalbi; çekirdekte olmayan oyuncular serbesttir, kendi
+  rollerinde rahat ettikleri şampiyonu alırlar.
 
 Hepimiz aynı takımda ve sesli iletişimdeyiz: zamanlama isteyen ulti zincirleri bizim için gerçekçi.
 Önce verileri oku; kurallar ve istenen çıktı formatı en sonda.
@@ -81,8 +83,9 @@ def rules_and_format(mode="karma"):
 
 ## Havuz ve roller
 - Her oyuncuya yalnızca **kendi havuzundaki** şampiyonlardan ver.
-  Tercih sırası: {MAIN} > {PLAYABLE} > {STRETCH}. Çekirdek başına en fazla {stretch_limit} {STRETCH} pick olsun.
-- Bir çekirdekte her rol en fazla bir kez; çekirdek dışındaki oyuncular kalan rolleri alabilmeli.
+  Tercih sırası: {MAIN} > {PLAYABLE} > {STRETCH}. Öneri başına en fazla {stretch_limit} {STRETCH} pick olsun.
+- 5'li comp'ta beş rol de dolu ve her oyuncu bir kez. Çekirdekte her rol en fazla bir kez;
+  çekirdek dışındaki oyuncular kalan rolleri alabilmeli.
   **Meta rol kalıplarına takılma:** "Roller" sütunu ve rol matrisi oyuncunun şampiyonu gerçekte
   hangi rolde kaç maç oynadığını gösterir (ör. Kai'Sa Mid, Miss Fortune Support). Off-meta serbest.
 - **"Oynamaz" (✕) rol o oyuncuya asla verilmez.** "Tercih eder" (✓) rolleri mümkünse kullan.
@@ -94,12 +97,12 @@ def rules_and_format(mode="karma"):
 - "Hasar%" takım hasarındaki pay, "CC sn" maç başı rakibi kontrol ettiği süre: kimin taşıdığını,
   kimin engage yaptığını bunlardan oku.
 - **Birlikte oynadığınız maçlar** gerçek ortak maçlarımız. Çok maçlı, yüksek winrate'li ikililer
-  kanıtlanmış silahlarımızdır: birkaç çekirdeği bunların üstüne kur.
+  kanıtlanmış silahlarımızdır: birkaç öneriyi bunların üstüne kur.
 - **Rank** oyuncunun seviyesini gösterir: mekanik olarak zor şampiyonları ve hassas zamanlama
   isteyen combo'ları ekibin seviyesine göre ayarla.
 - **Şampiyon notlarımız** grubun kendi gözlemidir; o şampiyonu değerlendirirken öncelik ver.
 
-## Puanlama (her çekirdek için 1-5)
+## Puanlama (her öneri için 1-5)
 - **Wombo:** ulti/CC zincirinin gücü, kaç kişiyi yakaladığı, ıskalanınca ne kadar tolere ettiği.
 - **Obje:** ejderha ve Baron'u ne kadar hızlı eritir (sürekli hasar, % can hasarı, obje hasarı/dk
   verisi) ve obje savaşında alanı ne kadar iyi tutar.
@@ -115,31 +118,39 @@ def rules_and_format(mode="karma"):
   **Şampiyon ulti özetleri**ni esas al; yine de emin değilsen o şampiyonu kullanma.
 
 ## Çeşitlilik
-- Çekirdekler birbirinin kopyası olmasın: farklı engage kaynakları, farklı oyuncu grupları.
-- Bir oyuncunun tek gerçek main'i her çekirdekte kilit olmasın (banlanırsa hepsi çöker): en az
+- Öneriler birbirinin kopyası olmasın: farklı engage kaynakları, farklı oyuncu grupları.
+- Bir oyuncunun tek gerçek main'i her öneride kilit olmasın (banlanırsa hepsi çöker): en az
   üçte biri o şampiyon olmadan kurulsun.
 {experimental}
 # İstenen çıktı
 **Kısa ve öz.** Genel LoL bilgisi anlatma, açıklama paragrafı yazma. Yalnızca şunlar:
 
-1. **Çekirdek tablosu**, üç puanın toplamına göre en iyiden başlayarak:
+Numaralar iki tablo boyunca devam etsin (ör. 5'liler 1-9, çekirdekler 10-18). Her tablo kendi
+içinde üç puanın toplamına göre en iyiden başlasın.
+
+1. **5'li comp'lar** (listenin yaklaşık yarısı):
+   | # | Tip | Top | Jungle | Mid | ADC | Support | Sesli komut | Wombo | Obje | Keyif | Not |
+   - Rol hücreleri: "Oyuncu Şampiyon" (ör. "civaHg Amumu")
+2. **Wombo çekirdekleri** (3-4 kişi, kalan yarı):
    | # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Wombo | Obje | Keyif | Not |
-   - Tip: Sağlam / Deneysel
    - Çekirdek: "Oyuncu Şampiyon (Rol)" + ... (ör. "civaHg Amumu (Jg) + Ali MF (Sup) + Lao Jhin (ADC)")
-   - Sesli komut: ulti sırası tek satır (ör. "Amumu R → Jhin W → MF R")
    - Serbest slotlar: çekirdek dışındaki roller; çekirdeği belirgin güçlendiren biri varsa
      "isteğe bağlı: Oyuncu Şampiyon"
+   İki tabloda da:
+   - Tip: Sağlam / Deneysel
+   - Sesli komut: ulti sırası tek satır (ör. "Amumu R → Jhin W → MF R")
    - Not: en fazla ~10 kelime, veriden kanıt ya da risk (ör. "ikili 14 maç %71", "Brand pas riski")
-2. **Öne çıkanlar** (en fazla 3 madde, tek cümle): en güçlü wombo, en hızlı obje ve en keyifli
-   çekirdek; bu akşam hangisiyle başlanmalı.
-3. **Ortak banlar** (tek satır, en fazla 3 şampiyon): çekirdeklerin çoğunu bozanlar.
-4. **Belirsizlikler**: yalnızca varsa, tek satır.
+3. **Öne çıkanlar** (en fazla 3 madde, tek cümle): en güçlü wombo, en hızlı obje ve en keyifli
+   öneri; bu akşam hangisiyle başlanmalı.
+4. **Ortak banlar** (tek satır, en fazla 3 şampiyon): önerilerin çoğunu bozanlar.
+5. **Belirsizlikler**: yalnızca varsa, tek satır.
 
-Bir çekirdeğin numarasını yazarsak o zaman ayrıntı ver: tam kadro, combo sırası, ilk 15 dakika,
+Bir önerinin numarasını yazarsak o zaman ayrıntı ver: tam kadro, combo sırası, ilk 15 dakika,
 draft sırası, yedek pickler. Draft sırasında rakip pickleri yazarsak öneriyi onlara göre daralt.
 
-**Göndermeden önce kontrol et:** tabloda en az {MIN_CORES} satır var mı, çoğu 3-4 kişilik mi,
-hiçbir çekirdekte "Oynamaz" rol ya da havuz dışı (işaretsiz) şampiyon yok mu?
+**Göndermeden önce kontrol et:** toplam en az {MIN_CORES} öneri var mı, yaklaşık yarısı 5'li
+comp mu, kalanı 3-4 kişilik mi, 5'lilerde beş rol de dolu mu, hiçbir öneride "Oynamaz" rol ya da
+havuz dışı (işaretsiz) şampiyon yok mu?
 
 _Brief formatı v{__version__}_
 """

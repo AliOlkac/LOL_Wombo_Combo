@@ -460,9 +460,9 @@ class BriefModeTest(unittest.TestCase):
 
     def test_modes(self):
         self.assertIn("Yaklaşık üçte biri **deneysel** olsun.", self.brief("karma"))
-        self.assertIn("## Deneysel çekirdek ne demek", self.brief("karma"))
+        self.assertIn("## Deneysel öneri ne demek", self.brief("karma"))
         klasik = self.brief("klasik")
-        self.assertNotIn("Deneysel çekirdek ne demek", klasik)
+        self.assertNotIn("Deneysel öneri ne demek", klasik)
         self.assertIn("Hepsi sağlam olsun.", klasik)
         self.assertIn("en fazla bir Esneme", klasik)
         self.assertIn("en fazla iki Esneme", self.brief("deneysel"))
@@ -497,13 +497,15 @@ class StrongerPromptTest(unittest.TestCase):
         self.assertEqual(order, sorted(order))
         self.assertIn("yama 15.1.1", text)
         self.assertIn("**Esnek** = en az 8 Main/Oynayabilir şampiyonu olan oyuncu", text)
-        exp = text.index("## Deneysel çekirdek ne demek")
+        exp = text.index("## Deneysel öneri ne demek")
         self.assertTrue(text.index("# Kurallar") < exp < text.index("# İstenen çıktı"))
         for must in ("Yasuo R yalnızca havaya kalkmış", "5 maçtan az winrate'i kanıt sayma",
-                     "**15-20 farklı wombo çekirdeği**", "**Çoğu 3 ya da 4 kişilik olsun**", "en az 15 satır var mı", "**kısa ve öz**",
+                     "**15-20 farklı öneri**", "**yaklaşık\nyarısı tam 5'li comp**", "en az 15 öneri var mı",
+                     "| # | Tip | Top | Jungle | Mid | ADC | Support | Sesli komut | Wombo | Obje | Keyif | Not |",
+                     "Numaralar iki tablo boyunca devam etsin", "**kısa ve öz**",
                      "| # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Wombo | Obje | Keyif | Not |", "isteğe bağlı: Oyuncu Şampiyon",
                      "en az\n  üçte biri o şampiyon olmadan", "**Öne çıkanlar**", "**Ortak banlar**",
-                     "Bir çekirdeğin numarasını yazarsak o zaman ayrıntı ver"):
+                     "Bir önerinin numarasını yazarsak o zaman ayrıntı ver"):
             self.assertIn(must, text)
 
     def test_role_matrix(self):
@@ -592,7 +594,7 @@ class RankAndNotesTest(unittest.TestCase):
         self.assertIn("## Şampiyon notlarımız (grubun kendi gözlemi)", text)
         self.assertIn("- **Ahri:** Charm ile combo başlatır.", text)
         self.assertNotIn("Kimse oynamıyor", text)
-        for must in ("## Puanlama (her çekirdek için 1-5)", "**Obje:** ejderha ve Baron'u", "**Keyif:**",
+        for must in ("## Puanlama (her öneri için 1-5)", "**Obje:** ejderha ve Baron'u", "**Keyif:**",
                      "en güçlü wombo, en hızlı obje ve en keyifli"):
             self.assertIn(must, text)
 
