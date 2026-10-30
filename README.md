@@ -54,7 +54,7 @@ Brief önce veriyi, en sonda kuralları ve çıktı formatını verir. Kurallar 
 - Az maçlı winrate'e güvenmeme
 - Çeşitlilik ve tek bir main'e bağımlılığın sorgulanması
 
-İstenen çıktı kısa ve özdür: tam 5'li comp yerine **10-20 wombo çekirdeği**. Çekirdek, ultileri birbirine zincirlenen 2-5 kişilik (çoğunlukla 3-4) bir gruptur; kalan oyuncular serbesttir ya da isteğe bağlı bir öneri alır. Her çekirdek tek bir tablo satırıdır:
+İstenen çıktı kısa ve özdür: 3 comp yerine **15-20 farklı wombo çekirdeği** (en az 15). Çekirdek, ultileri birbirine zincirlenen 3-5 kişilik bir gruptur; çoğu 3 ya da 4 kişiliktir, tam 5'li en fazla birkaç tane. Kalan oyuncular serbesttir ya da isteğe bağlı bir öneri alır. Her çekirdek tek bir tablo satırıdır:
 
 | # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Wombo | Obje | Keyif | Not |
 |---|---|---|---|---|---|---|---|---|
@@ -68,6 +68,10 @@ Puanlar 1-5 arası:
 Tablonun altında yalnızca öne çıkanlar (en fazla 3 madde), ortak banlar ve varsa belirsizlikler gelir. Bir çekirdeğin ayrıntısını (tam kadro, ilk 15 dakika, draft sırası, yedekler) istemek için numarasını yazman yeterli.
 
 Anahtar `data/riot_key.txt` dosyasında, veriler `data/wombo.db` dosyasında durur. `data/` klasörü git'e girmez.
+
+## Güncelleme sonrası
+
+`git pull` ile yeni kodu aldıktan sonra arayüzü (siyah komut penceresini) kapatıp `baslat.bat` ile **yeniden aç**. Açık kalan sunucu eski kodla çalışmaya devam eder. Bu durumda arayüzün üstünde kırmızı "Arayüz eski kodla çalışıyor" uyarısı çıkar. Çalışan sürüm logonun yanında yazar, brief'in sonunda da `Brief formatı vX.Y.Z` olarak görünür.
 
 ## Komut satırı
 

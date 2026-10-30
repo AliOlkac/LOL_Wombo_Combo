@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import URLError
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import service
+from . import __version__, service
 from .pool import POSITION_NAMES, TIER_ALIASES, TIER_ORDER, format_rank, parse_roles
 from .riot import RiotAuthError, RiotError
 from .store import Store, _norm
@@ -199,6 +199,7 @@ def api_state(h, store):
         "key": key_status(),
         "job": h.server.job.snapshot(),
         "positions": POSITION_NAMES,
+        "version": __version__,
     }
 
 
@@ -441,7 +442,7 @@ def make_server(db_path, platform="tr1", port=8765):
 def serve(db_path, platform="tr1", port=8765, open_browser=True):
     server = make_server(db_path, platform, port)
     url = f"http://127.0.0.1:{port}"
-    print(f"Arayüz açık: {url}  (kapatmak için Ctrl+C)")
+    print(f"Wombo Combo v{__version__} — arayüz açık: {url}  (kapatmak için Ctrl+C)")
     if open_browser:
         threading.Timer(0.5, webbrowser.open, (url,)).start()
     try:

@@ -6,6 +6,8 @@ okuduktan sonra görür.
 """
 import re
 
+from . import __version__
+
 from .pool import FLEX_BREADTH, MAIN, PLAYABLE, POSITION_NAMES, STRETCH, format_rank
 from .store import POSITIONS, _norm
 from .synergy import duo_stats, pair_totals
@@ -27,7 +29,8 @@ MODES = {
     "klasik": "hepsi sağlam",
     "deneysel": "çoğu deneysel (troll görünen ama güçlü)",
 }
-CORE_COUNT = "10-20"  # tek seferde istenen wombo çekirdeği sayısı
+CORE_COUNT = "15-20"  # tek seferde istenen wombo çekirdeği sayısı
+MIN_CORES = 15
 
 EXPERIMENTAL = """
 ## Deneysel çekirdek ne demek
@@ -56,11 +59,12 @@ def task_intro(mode="karma", patch=None):
 
 Sen deneyimli bir League of Legends koçu ve analistisin. Türkçe, **kısa ve öz** cevap ver.
 Aşağıda 5 kişilik premade takımımızın gerçek maç verisi var ({source}).
-Bize **{CORE_COUNT} wombo çekirdeği** öner. {mix}
+Bize **{CORE_COUNT} farklı wombo çekirdeği** öner (en az {MIN_CORES}; 3-4 comp ile yetinme). {mix}
 
-**Wombo çekirdeği:** 2-5 oyuncudan (çoğunlukla 3-4) oluşan, ultileri ve CC'leri birbirine
-zincirlenen grup: AoE engage, havaya kaldırma/çekme ve AoE hasar. Çekirdekte olmayan oyuncular
-serbesttir, kendi rollerinde rahat ettikleri şampiyonu alırlar. Tam 5'li comp kurmak zorunda değilsin.
+**Wombo çekirdeği:** 3-5 oyuncudan oluşan, ultileri ve CC'leri birbirine zincirlenen grup: AoE
+engage, havaya kaldırma/çekme ve AoE hasar. **Çoğu 3 ya da 4 kişilik olsun**; tam 5'li en fazla
+birkaç tane. Çekirdekte olmayan oyuncular serbesttir, kendi rollerinde rahat ettikleri şampiyonu
+alırlar.
 
 Hepimiz aynı takımda ve sesli iletişimdeyiz: zamanlama isteyen ulti zincirleri bizim için gerçekçi.
 Önce verileri oku; kurallar ve istenen çıktı formatı en sonda.
@@ -133,6 +137,11 @@ def rules_and_format(mode="karma"):
 
 Bir çekirdeğin numarasını yazarsak o zaman ayrıntı ver: tam kadro, combo sırası, ilk 15 dakika,
 draft sırası, yedek pickler. Draft sırasında rakip pickleri yazarsak öneriyi onlara göre daralt.
+
+**Göndermeden önce kontrol et:** tabloda en az {MIN_CORES} satır var mı, çoğu 3-4 kişilik mi,
+hiçbir çekirdekte "Oynamaz" rol ya da havuz dışı (işaretsiz) şampiyon yok mu?
+
+_Brief formatı v{__version__}_
 """
 
 

@@ -500,7 +500,7 @@ class StrongerPromptTest(unittest.TestCase):
         exp = text.index("## Deneysel çekirdek ne demek")
         self.assertTrue(text.index("# Kurallar") < exp < text.index("# İstenen çıktı"))
         for must in ("Yasuo R yalnızca havaya kalkmış", "5 maçtan az winrate'i kanıt sayma",
-                     "**10-20 wombo çekirdeği**", "Tam 5'li comp kurmak zorunda değilsin", "**kısa ve öz**",
+                     "**15-20 farklı wombo çekirdeği**", "**Çoğu 3 ya da 4 kişilik olsun**", "en az 15 satır var mı", "**kısa ve öz**",
                      "| # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Wombo | Obje | Keyif | Not |", "isteğe bağlı: Oyuncu Şampiyon",
                      "en az\n  üçte biri o şampiyon olmadan", "**Öne çıkanlar**", "**Ortak banlar**",
                      "Bir çekirdeğin numarasını yazarsak o zaman ayrıntı ver"):
@@ -771,6 +771,17 @@ class WebApiTest(unittest.TestCase):
             code, err = self.call("POST", "/api/update", {"max_matches": 5000})
         self.assertEqual(code, 400)
         self.assertIn("derinliği", err["error"])
+
+    def test_version_in_state_page_and_brief(self):
+        import re
+        from wombo import __version__
+        with open(os.path.join(os.path.dirname(service.__file__), "static", "index.html"), encoding="utf-8") as f:
+            ui_version = re.search(r'const UI_VERSION = "([^"]+)"', f.read()).group(1)
+        self.assertEqual(ui_version, __version__)  # sayfa ile kod aynı sürümde olmalı
+        code, state = self.call("GET", "/api/state")
+        self.assertEqual(state["version"], __version__)
+        code, r = self.call("POST", "/api/brief", {"profile_ids": self.ids})
+        self.assertIn(f"_Brief formatı v{__version__}_", r["text"])
 
     def test_notes_api_and_rank_label(self):
         code, notes = self.call("GET", "/api/notes")

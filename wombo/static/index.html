@@ -189,6 +189,7 @@ details[open] summary { margin-bottom: 4px; }
 <header>
   <div class="bar">
     <div class="logo">WOMBO<span>·</span>COMBO</div>
+    <span class="small muted" id="versionTag"></span>
     <div class="spacer"></div>
     <button class="chip" id="keyChip" title="Riot API anahtarı"><span class="dot"></span><span>Anahtar</span></button>
     <select id="depth" aria-label="Hesap başına kaç maç çekilsin"
@@ -216,6 +217,10 @@ details[open] summary { margin-bottom: 4px; }
       <button class="primary">Profil ekle</button>
       <p class="form-error" role="alert"></p>
     </form>
+  </div>
+  <div class="notice" id="staleNotice" style="border-color:var(--danger)">
+    <p><strong>Arayüz eski kodla çalışıyor.</strong> Kod güncellenmiş ama sunucu yeniden başlatılmamış;
+      brief eski formatta çıkar. Bu pencereyi ve siyah komut penceresini kapatıp <code>baslat.bat</code> ile yeniden aç.</p>
   </div>
   <div class="notice" id="notice">
     <p id="noticeText"></p>
@@ -301,6 +306,7 @@ details[open] summary { margin-bottom: 4px; }
 <datalist id="champList"></datalist>
 
 <script>
+const UI_VERSION = "0.8.0";  // wombo/__init__.py içindeki __version__ ile aynı olmalı
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ROLE_ORDER = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
@@ -555,6 +561,8 @@ function renderJob(job) {
 
 async function load() {
   state = await api("GET", `/api/state?min=${friendMin}`);
+  $("#staleNotice").classList.toggle("show", state.version !== UI_VERSION);
+  $("#versionTag").textContent = `v${state.version || "?"}`;
   saveSelection();
   render();
   if (state.job.running) startPolling();
