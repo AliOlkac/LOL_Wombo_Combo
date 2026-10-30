@@ -95,6 +95,10 @@ class RiotClient:
                     time.sleep(float(retry_after) if retry_after else 2 ** attempt)
                     continue
                 raise RiotError(f"HTTP {e.code}: {url}") from e
+            except (TimeoutError, ConnectionError):
+                if attempt >= 2:
+                    raise
+                time.sleep(2 ** attempt)
         raise RiotError(f"İstek tekrar denemelere rağmen başarısız: {url}")
 
     def account_by_riot_id(self, game_name, tag_line):
@@ -108,6 +112,10 @@ class RiotClient:
 
     def match(self, match_id):
         return self._get(self.region, f"/lol/match/v5/matches/{match_id}")
+
+    def platform_status(self):
+        """Anahtar gerektiren hafif bir uç; anahtar ve bağlantı testi için."""
+        return self._get(self.platform, "/lol/status/v4/platform-data")
 
     def masteries(self, puuid, platform=None):
         """platform verilmezse istemcinin sunucusu kullanılır (ör. maç ID'sinden 'tr1')."""

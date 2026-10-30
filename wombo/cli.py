@@ -2,7 +2,6 @@
 import argparse
 import sys
 import time
-from urllib.error import URLError
 
 from . import service
 from .pool import POSITION_NAMES, TIER_ALIASES, parse_roles
@@ -13,8 +12,11 @@ from .store import Store, split_roles
 
 def cmd_add(args, store):
     client = service.make_client(args.sunucu)
-    profile_id = store.get_or_create_profile(args.profil)
-    riot_id = service.add_account(store, client, profile_id, args.riot_id)
+    existing = store.find_profile(args.profil)
+    if existing is not None:  # mevcut profile ikinci hesap (smurf)
+        riot_id = service.add_account(store, client, existing["id"], args.riot_id)
+    else:
+        _, riot_id = service.create_profile(store, lambda: client, args.profil, args.riot_id)
     print(f"{args.profil} profiline eklendi: {riot_id}")
     print(f"Şimdi verisini çek: python -m wombo guncelle \"{args.profil}\"")
 
@@ -123,7 +125,9 @@ def cmd_team(args, store):
 
 def cmd_key(args, store):
     service.save_api_key(args.anahtar)
-    print("Anahtar kaydedildi (data/riot_key.txt, git'e girmez).")
+    print("Anahtar kaydedildi (data/riot_key.txt, git'e girmez). Test ediliyor...")
+    service.check_key(service.make_client(args.sunucu))
+    print("Anahtar çalışıyor, Riot'a bağlantı başarılı.")
 
 
 def cmd_ui(args, store):
@@ -195,10 +199,10 @@ def main(argv=None):
     store = Store(args.db)
     try:
         args.func(args, store)
-    except (RiotError, KeyError, ValueError) as e:
-        sys.exit(str(e).strip("'\""))
-    except URLError as e:
-        sys.exit(f"Ağ hatası: {e.reason}")
+    except KeyError as e:
+        sys.exit(e.args[0] if e.args else "Bulunamadı")
+    except (RiotError, ValueError, OSError) as e:
+        sys.exit(service.describe_error(e))
 
 
 if __name__ == "__main__":

@@ -100,9 +100,18 @@ class Store:
         self.db.commit()
         return cur.lastrowid
 
+    def find_profile(self, name):
+        return self.db.execute("SELECT * FROM profiles WHERE name = ?", (name.strip(),)).fetchone()
+
     def get_or_create_profile(self, name):
-        row = self.db.execute("SELECT id FROM profiles WHERE name = ?", (name.strip(),)).fetchone()
+        row = self.find_profile(name)
         return row["id"] if row else self.create_profile(name)
+
+    def account_owner(self, puuid):
+        """Hesabın bağlı olduğu profil (yoksa None)."""
+        return self.db.execute(
+            "SELECT p.* FROM profiles p JOIN accounts a ON a.profile_id = p.id WHERE a.puuid = ?",
+            (puuid,)).fetchone()
 
     def profiles(self):
         return self.db.execute("SELECT * FROM profiles ORDER BY name").fetchall()

@@ -70,15 +70,12 @@ class UpdateJob:
                         progress=lambda d, t: self._set(done=d, total=t, message="Maçlar indiriliyor"))
                 except RiotAuthError:
                     raise
-                except (RiotError, URLError) as e:
-                    self._error(f"{acc['riot_id']}: {getattr(e, 'reason', e)}")
+                except (RiotError, OSError) as e:
+                    self._error(f"{acc['riot_id']}: {service.describe_error(e)}")
             self._set(message="Tamamlandı")
-        except URLError as e:
-            self._set(message="Hata")
-            self._error(f"Ağ hatası: {e.reason}")
         except Exception as e:  # iş parçacığı sessizce ölmesin, arayüzde görünsün
             self._set(message="Hata")
-            self._error(str(e))
+            self._error(service.describe_error(e))
         finally:
             store.close()
             self._set(running=False, finished_at=time.time())
@@ -155,10 +152,10 @@ def api_profile(h, store, pid):
 
 
 def api_create_profile(h, store):
-    name = (h.body().get("name") or "").strip()
-    if not name:
-        raise ValueError("Profil adı boş olamaz.")
-    return {"id": store.create_profile(name)}
+    data = h.body()
+    profile_id, riot_id = service.create_profile(
+        store, lambda: service.make_client(h.server.platform), data.get("name"), data.get("riot_id"))
+    return {"id": profile_id, "riot_id": riot_id}
 
 
 def api_update_profile(h, store, pid):
@@ -238,7 +235,16 @@ def api_brief(h, store):
 
 def api_save_key(h, store):
     service.save_api_key(h.body().get("key") or "")
-    return key_status()
+    return {**key_status(), **api_test_key(h, store)}
+
+
+def api_test_key(h, store):
+    """Anahtarı Riot'a karşı dener. Hata fırlatmaz; sonucu {"key_ok", "key_message"} olarak döner."""
+    try:
+        service.check_key(service.make_client(h.server.platform))
+        return {"key_ok": True, "key_message": "Anahtar çalışıyor, Riot'a bağlantı başarılı."}
+    except Exception as e:
+        return {"key_ok": False, "key_message": service.describe_error(e)}
 
 
 def api_champions(h, store):
@@ -262,6 +268,7 @@ ROUTES = [
     ("POST", r"/api/update", api_start_update),
     ("POST", r"/api/brief", api_brief),
     ("POST", r"/api/key", api_save_key),
+    ("POST", r"/api/key/test", api_test_key),
 ]
 
 
@@ -321,8 +328,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(400, {"error": "Bu isimde bir profil zaten var."})
             except (ValueError, RiotError) as e:
                 self.send(400, {"error": str(e)})
-            except URLError as e:
-                self.send(502, {"error": f"Ağ hatası: {e.reason}"})
+            except (URLError, OSError) as e:
+                self.send(502, {"error": service.describe_error(e)})
+            except Exception as e:  # sunucu cevap vermeden kapanmasın; hata arayüzde görünsün
+                self.send(500, {"error": f"Beklenmeyen hata: {e!r}"})
             finally:
                 store.close()
             return

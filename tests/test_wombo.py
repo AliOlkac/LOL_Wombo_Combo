@@ -4,12 +4,13 @@ import tempfile
 import threading
 import unittest
 import urllib.request
+from unittest import mock
 from urllib.error import HTTPError
 
 from wombo import service
 from wombo.pool import MAIN, PLAYABLE, STRETCH, ChampStat, build_pool, comfort_score, parse_roles
 from wombo.prompt import build_prompt
-from wombo.riot import RateLimiter
+from wombo.riot import RateLimiter, RiotAuthError, RiotError
 from wombo.store import Store
 
 NOW = 1_800_000_000_000
@@ -202,6 +203,71 @@ class FriendDiscoveryTest(unittest.TestCase):
             service.link_suggested_account(self.store, "yok")
 
 
+class AccountClient:
+    """Sadece hesap doğrulama ve anahtar testi yapan sahte istemci."""
+
+    def __init__(self, accounts=None, status_error=None):
+        self.accounts = accounts or {"oqila#4310": ("me", "Oqila", "4310")}
+        self.status_error = status_error
+
+    def account_by_riot_id(self, game_name, tag):
+        found = self.accounts.get(f"{game_name}#{tag}".lower())
+        return {"puuid": found[0], "gameName": found[1], "tagLine": found[2]} if found else None
+
+    def platform_status(self):
+        if self.status_error:
+            raise self.status_error
+        return {"id": "TR1"}
+
+
+class CreateProfileTest(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+        self.addCleanup(self.store.close)
+        self.client = AccountClient()
+
+    def create(self, name, riot_id=None):
+        return service.create_profile(self.store, lambda: self.client, name, riot_id)
+
+    def test_verified_account_creates_profile_with_correct_casing(self):
+        pid, riot_id = self.create("Oqila", "oqila#4310")
+        self.assertEqual(riot_id, "Oqila#4310")
+        self.assertEqual(self.store.accounts(pid)[0]["puuid"], "me")
+
+    def test_unknown_riot_id_creates_nothing(self):
+        with self.assertRaises(RiotError):
+            self.create("Oqila", "Yanlis#0000")
+        self.assertEqual(self.store.profiles(), [])
+
+    def test_riot_id_typed_into_name_field_is_split(self):
+        pid, riot_id = self.create("Oqila#4310")
+        self.assertEqual((self.store.profile(pid)["name"], riot_id), ("Oqila", "Oqila#4310"))
+
+    def test_empty_profile_from_failed_attempt_is_reused(self):
+        old = self.store.create_profile("Oqila")
+        pid, _ = self.create("oqila", "Oqila#4310")
+        self.assertEqual(pid, old)
+        self.assertEqual(len(self.store.profiles()), 1)
+
+    def test_duplicate_account_or_name_is_rejected(self):
+        self.create("Oqila", "Oqila#4310")
+        with self.assertRaisesRegex(ValueError, "zaten Oqila profiline bağlı"):
+            self.create("Baska", "Oqila#4310")
+        self.client.accounts["smurf#tr1"] = ("smurf", "Smurf", "TR1")
+        with self.assertRaisesRegex(ValueError, "zaten var"):
+            self.create("Oqila", "Smurf#TR1")
+        self.assertEqual(len(self.store.profiles()), 1)
+
+    def test_describe_error_messages(self):
+        import socket
+        import ssl
+        from urllib.error import URLError
+        ssl_err = URLError(ssl.SSLCertVerificationError("CERTIFICATE_VERIFY_FAILED"))
+        self.assertIn("SSL sertifika", service.describe_error(ssl_err))
+        self.assertIn("internet", service.describe_error(URLError(socket.gaierror(11001, "getaddrinfo failed"))))
+        self.assertIn("süresi dolmuş", service.describe_error(RiotAuthError("API anahtarı geçersiz ya da süresi dolmuş")))
+
+
 class RateLimiterTest(unittest.TestCase):
     def test_waits_when_window_full(self):
         t = [0.0]
@@ -308,6 +374,29 @@ class WebApiTest(unittest.TestCase):
         code, state = self.call("GET", "/api/state")
         self.assertEqual([f["riot_id"] for f in state["friends"]], ["Can#TR1"])
         self.assertIn("Ayşe", [p["name"] for p in state["profiles"]])
+
+    def test_create_profile_endpoint_is_atomic(self):
+        with mock.patch.object(service, "make_client", lambda platform="tr1": AccountClient()):
+            code, err = self.call("POST", "/api/profiles", {"name": "Oqila", "riot_id": "Yok#1"})
+            self.assertEqual(code, 400)
+            self.assertIn("Hesap bulunamadı", err["error"])
+            code, r = self.call("POST", "/api/profiles", {"name": "Oqila#4310", "riot_id": ""})
+            self.assertEqual((code, r["riot_id"]), (200, "Oqila#4310"))
+        code, state = self.call("GET", "/api/state")
+        names = [p["name"] for p in state["profiles"]]
+        self.assertEqual(names.count("Oqila"), 1)
+        self.assertEqual(len(names), 6)  # 5 hazır profil + Oqila; başarısız deneme iz bırakmadı
+
+    def test_key_test_endpoint_reports_expired_key(self):
+        expired = AccountClient(status_error=RiotAuthError("API anahtarı geçersiz ya da süresi dolmuş"))
+        with mock.patch.object(service, "make_client", lambda platform="tr1": expired):
+            code, r = self.call("POST", "/api/key/test")
+        self.assertEqual(code, 200)
+        self.assertFalse(r["key_ok"])
+        self.assertIn("süresi dolmuş", r["key_message"])
+        with mock.patch.object(service, "make_client", lambda platform="tr1": AccountClient()):
+            code, r = self.call("POST", "/api/key/test")
+        self.assertTrue(r["key_ok"])
 
     def test_non_json_post_is_rejected(self):
         code, _ = self.call("POST", "/api/profiles", {"name": "X"}, content_type="text/plain")

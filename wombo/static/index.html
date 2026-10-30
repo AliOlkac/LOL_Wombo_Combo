@@ -104,6 +104,17 @@ main { max-width: 1280px; margin: 0 auto; padding: 18px 16px 120px; }
 .friend input { width: 140px; }
 .friend select { max-width: 190px; }
 
+.form-error { flex-basis: 100%; margin: 2px 0 0; color: var(--danger); font-size: 13px; }
+.form-error:empty { display: none; }
+.notice { border: 1px solid var(--gold); background: rgba(200,170,110,.08); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 16px; display: none; gap: 12px; align-items: center; flex-wrap: wrap; }
+.notice.show { display: flex; }
+.notice p { margin: 0; flex: 1; min-width: 200px; }
+.key-result { margin: 0; font-size: 13px; }
+.key-result:empty { display: none; }
+.key-result.ok { color: var(--ok); }
+.key-result.bad { color: var(--danger); }
+
 .empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 28px; text-align: center; color: var(--muted); }
 .empty ol { text-align: left; display: inline-block; margin: 10px 0 0; }
 
@@ -187,9 +198,14 @@ td .ic { width: 28px; height: 28px; border-radius: 6px; }
     <div class="spacer"></div>
     <form id="newProfile">
       <input name="name" placeholder="Arkadaşın adı" required maxlength="40">
-      <input name="riot_id" placeholder="Riot ID (İsim#TR1), isteğe bağlı" maxlength="40">
+      <input name="riot_id" placeholder="Riot ID (ör. Oqila#4310)" maxlength="40">
       <button class="primary">Profil ekle</button>
+      <p class="form-error" role="alert"></p>
     </form>
+  </div>
+  <div class="notice" id="notice">
+    <p id="noticeText"></p>
+    <button class="primary" id="openKey">Anahtar ekle</button>
   </div>
   <section id="friends" class="friends" aria-label="Önerilen arkadaşlar"></section>
   <div id="grid" class="grid"></div>
@@ -228,9 +244,14 @@ td .ic { width: 28px; height: 28px; border-radius: 6px; }
   <p class="small" id="keyInfo" style="margin:0"></p>
   <form id="keyForm" class="inline">
     <input type="password" name="key" placeholder="RGAPI-..." autocomplete="off" required>
-    <button class="primary">Kaydet</button>
+    <button class="primary">Kaydet ve test et</button>
+    <p class="form-error" role="alert"></p>
   </form>
-  <div class="actions"><button id="closeKey">Kapat</button></div>
+  <p class="key-result" id="keyResult" role="status"></p>
+  <div class="actions">
+    <button id="testKey">Kayıtlı anahtarı test et</button>
+    <button id="closeKey">Kapat</button>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -249,6 +270,7 @@ let detail = null;
 let pollTimer = null;
 let selected = [];
 let friendMin = 3;
+let keyTest = null;  // son anahtar testi: {key_ok, key_message} ya da null
 try { selected = JSON.parse(localStorage.getItem("wombo.team") || "[]"); } catch (e) {}
 
 async function api(method, path, body) {
@@ -266,6 +288,30 @@ function toast(text, isError = false) {
   t.className = "toast show" + (isError ? " err" : "");
   clearTimeout(t._timer);
   t._timer = setTimeout(() => t.className = "toast", isError ? 6000 : 2500);
+}
+
+// Formun altında kalıcı hata gösterir; istek sürerken düğmeyi kilitler
+async function submitForm(form, fn, busyText = "Kontrol ediliyor…") {
+  let err = form.querySelector(".form-error");
+  if (!err) {
+    err = document.createElement("p");
+    err.className = "form-error";
+    err.setAttribute("role", "alert");
+    form.appendChild(err);
+  }
+  err.textContent = "";
+  const btn = form.querySelector("button");
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = busyText;
+  try {
+    await fn();
+  } catch (e) {
+    err.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 }
 
 async function run(fn) {
@@ -341,6 +387,7 @@ function card(p) {
     <div class="card-foot">
       <span class="small muted">${p.sr_games} maç · ${ago(last)}</span>
       <div class="spacer"></div>
+      ${p.accounts.length ? "" : `<button class="ghost danger" data-del-profile="${p.id}">Sil</button>`}
       <button data-open="${p.id}">Detay</button>
     </div>
   </article>`;
@@ -372,12 +419,20 @@ function render() {
   const k = state.key;
   const chip = $("#keyChip");
   let cls = "bad", text = "Anahtar yok";
-  if (k.has_key) {
+  if (k.has_key && keyTest && !keyTest.key_ok) {
+    text = "Anahtar çalışmıyor";
+  } else if (k.has_key) {
     const expired = k.age_hours !== null && k.age_hours >= 24;
     cls = expired ? "warn" : "ok";
     text = expired ? "Anahtar eski olabilir" : `Anahtar ${k.hint}`;
   }
   chip.innerHTML = `<span class="dot ${cls}"></span><span>${esc(text)}</span>`;
+  const failing = k.has_key && keyTest && !keyTest.key_ok;
+  $("#notice").classList.toggle("show", !k.has_key || failing);
+  $("#noticeText").innerHTML = !k.has_key
+    ? "<strong>Önce Riot API anahtarını kaydet.</strong> Anahtar olmadan Riot ID'ler doğrulanamaz ve maç verisi çekilemez."
+    : `<strong>Riot'a bağlanılamıyor:</strong> ${esc(keyTest?.key_message)}`;
+  $("#openKey").textContent = k.has_key ? "Anahtarı değiştir" : "Anahtar ekle";
   renderJob(state.job);
   renderFriends();
 }
@@ -552,6 +607,11 @@ document.addEventListener("click", e => {
   if (!t) return;
   if (t.dataset.pick) return toggleSelect(Number(t.dataset.pick));
   if (t.dataset.open) return run(() => openDrawer(Number(t.dataset.open)));
+  if (t.dataset.delProfile) {
+    const p = state.profiles.find(x => x.id === Number(t.dataset.delProfile));
+    if (!p || !confirm(`${p.name} profili silinsin mi?`)) return;
+    return run(async () => { await api("DELETE", `/api/profiles/${p.id}`); await load(); });
+  }
   if (t.id === "closeDrawer") return closeDrawer();
   if (t.id === "friendMin") { friendMin = friendMin === 3 ? 2 : 3; return run(load); }
   if (t.dataset.role && detail) {
@@ -589,35 +649,34 @@ document.addEventListener("submit", e => {
       await load();
     });
   } else if (f.id === "addAccount") {
-    refreshAfter(async () => {
+    submitForm(f, async () => {
       const r = await api("POST", `/api/profiles/${detail.id}/accounts`, data);
       toast(`${r.riot_id} eklendi. Şimdi güncelle.`);
+      await load();
+      await openDrawer(openId);
     });
   } else if (f.id === "addExtra") {
-    refreshAfter(() => api("POST", `/api/profiles/${detail.id}/extras`, data));
+    submitForm(f, async () => {
+      await api("POST", `/api/profiles/${detail.id}/extras`, data);
+      await load();
+      await openDrawer(openId);
+    }, "Ekleniyor…");
   } else if (f.id === "newProfile") {
-    run(async () => {
-      const { id } = await api("POST", "/api/profiles", { name: data.name });
+    submitForm(f, async () => {
+      const r = await api("POST", "/api/profiles", data);
       f.reset();
-      if (data.riot_id.trim()) {
-        try {
-          const r = await api("POST", `/api/profiles/${id}/accounts`, { riot_id: data.riot_id });
-          toast(`${data.name} eklendi (${r.riot_id}).`);
-        } catch (err) {
-          toast(`Profil eklendi ama hesap eklenemedi: ${err.message}`, true);
-        }
-      }
+      toast(r.riot_id ? `${r.riot_id} eklendi. Şimdi "Herkesi güncelle"ye bas.` : "Profil eklendi.");
       await load();
     });
   } else if (f.id === "keyForm") {
-    run(async () => {
-      state.key = await api("POST", "/api/key", data);
+    submitForm(f, async () => {
+      const r = await api("POST", "/api/key", data);
       f.reset();
-      $("#keyModal").classList.remove("show");
-      $("#overlay").classList.remove("show");
+      state.key = r;
       render();
-      toast("Anahtar kaydedildi.");
-    });
+      showKeyResult(r);
+      fillKeyInfo();
+    }, "Test ediliyor…");
   }
 });
 
@@ -636,14 +695,40 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") $("#overlay"
 
 $("#updateAll").addEventListener("click", () => startUpdate([]));
 $("#clearTeam").addEventListener("click", () => { selected = []; saveSelection(); render(); });
-$("#keyChip").addEventListener("click", () => {
+function fillKeyInfo() {
   const k = state.key;
   $("#keyInfo").textContent = k.has_key
     ? `Kayıtlı anahtar: ${k.hint}` + (k.age_hours !== null ? ` · ${k.age_hours} saat önce kaydedildi` : " (ortam değişkeninden)")
     : "Kayıtlı anahtar yok.";
+  $("#testKey").disabled = !k.has_key;
+}
+
+function showKeyResult(r) {
+  keyTest = r;
+  if (state) render();
+  const el = $("#keyResult");
+  el.textContent = (r.key_ok ? "✓ " : "✕ ") + r.key_message;
+  el.className = "key-result " + (r.key_ok ? "ok" : "bad");
+}
+
+function openKeyModal() {
+  fillKeyInfo();
+  $("#keyResult").textContent = "";
   $("#keyModal").classList.add("show");
   $("#overlay").classList.add("show");
   $("#keyForm input").focus();
+}
+
+$("#keyChip").addEventListener("click", openKeyModal);
+$("#openKey").addEventListener("click", openKeyModal);
+$("#testKey").addEventListener("click", async () => {
+  const btn = $("#testKey");
+  btn.disabled = true;
+  $("#keyResult").className = "key-result";
+  $("#keyResult").textContent = "Test ediliyor…";
+  try { showKeyResult(await api("POST", "/api/key/test")); }
+  catch (e) { showKeyResult({ key_ok: false, key_message: e.message }); }
+  finally { btn.disabled = false; }
 });
 $("#closeKey").addEventListener("click", () => $("#overlay").click());
 $("#makeBrief").addEventListener("click", () => run(async () => {
@@ -660,7 +745,14 @@ $("#copyBrief").addEventListener("click", async () => {
   toast("Kopyalandı. Claude'a yapıştırabilirsin.");
 });
 
-run(load);
+run(async () => {
+  await load();
+  // Anahtar varsa açılışta bir kez sessizce test et; sorun varsa üstte görünsün
+  if (state.key.has_key) {
+    keyTest = await api("POST", "/api/key/test").catch(e => ({ key_ok: false, key_message: e.message }));
+    render();
+  }
+});
 </script>
 </body>
 </html>
