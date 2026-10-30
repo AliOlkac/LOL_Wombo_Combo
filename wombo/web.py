@@ -15,7 +15,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import service
 from .pool import POSITION_NAMES, TIER_ALIASES, TIER_ORDER, parse_roles
-from .prompt import build_prompt
 from .riot import RiotAuthError, RiotError
 from .store import Store, _norm
 
@@ -260,8 +259,7 @@ def api_brief(h, store):
     ids = [int(i) for i in h.body().get("profile_ids") or []]
     if len(ids) != 5 or len(set(ids)) != 5:
         raise ValueError("Brief için tam 5 farklı profil seç.")
-    pools = [service.load_pool(store, store.profile(i)) for i in ids]
-    return {"text": build_prompt(pools, store.champion_names())}
+    return {"text": service.team_brief(store, [store.profile(i) for i in ids])}
 
 
 def api_save_key(h, store):

@@ -9,9 +9,10 @@ from urllib.error import HTTPError
 
 from wombo import service
 from wombo.pool import MAIN, PLAYABLE, STRETCH, ChampStat, build_pool, comfort_score, parse_roles
-from wombo.prompt import build_prompt
+from wombo.prompt import build_prompt, synergy_section
 from wombo.riot import RateLimiter, RiotAuthError, RiotClient, RiotError
 from wombo.store import Store
+from wombo.synergy import duo_stats, shared_matches
 
 NOW = 1_800_000_000_000
 DAY = 86_400_000
@@ -319,6 +320,60 @@ class KeyHandlingTest(unittest.TestCase):
         self.assertIn("tanımıyor", self.diagnose([(401, ""), (401, "Unknown apikey"), (401, "")]))
         self.assertIn("ağda", self.diagnose([(None, "Ağ hatası"), (None, ""), (None, "")]))
         self.assertIn("bulunamadı", self.diagnose([(401, ""), (200, "OK"), (404, "")]))
+
+
+class SynergyTest(unittest.TestCase):
+    """Ali MF (Support) + Lao Jhin (ADC) gibi ikilileri ortak maçlardan bulma."""
+
+    def setUp(self):
+        store = self.store = Store(":memory:")
+        self.addCleanup(store.close)
+        self.ali = store.create_profile("Ali")
+        self.lao = store.create_profile("Lao")
+        self.civa = store.create_profile("civa")
+        store.add_account("ali", "Oqila#4310", self.ali)
+        store.add_account("lao", "Lao#AZ", self.lao)
+        store.add_account("civa", "civaHg#TR1", self.civa)
+        # m0-m3 Ali'nin geçmişinde (Lao yanında Jhin); m0-m1 Lao'nun kendi geçmişinde de var
+        for i in range(4):
+            win = i != 3
+            store.add_match(f"m{i}", "ali", "MissFortune", "UTILITY", 5, 3, 9, win, NOW - i, 420)
+            store.add_teammate(f"m{i}", "ali", "lao", "Lao#AZ", "Jhin", "BOTTOM", win, NOW - i, 420)
+            if i < 2:
+                store.add_match(f"m{i}", "lao", "Jhin", "BOTTOM", 8, 2, 6, win, NOW - i, 420)
+                store.add_teammate(f"m{i}", "lao", "ali", "Oqila#4310", "MissFortune", "UTILITY",
+                                   win, NOW - i, 420)
+        # m4 sadece Lao'nun geçmişinde: Ali ve civa yanında
+        store.add_match("m4", "lao", "Jhin", "BOTTOM", 9, 1, 7, True, NOW - 4, 420)
+        store.add_teammate("m4", "lao", "ali", "Oqila#4310", "MissFortune", "UTILITY", True, NOW - 4, 420)
+        store.add_teammate("m4", "lao", "civa", "civaHg#TR1", "Amumu", "JUNGLE", True, NOW - 4, 420)
+        # birlikte ARAM: sayılmaz
+        store.add_match("a1", "ali", "Jinx", None, 1, 1, 1, True, NOW, 450)
+        store.add_teammate("a1", "ali", "lao", "Lao#AZ", "Lux", None, True, NOW, 450)
+        store.db.commit()
+        self.shared = shared_matches(store.shared_rows([self.ali, self.lao, self.civa]))
+
+    def test_matches_seen_from_both_accounts_count_once(self):
+        self.assertEqual([m.match_id for m in self.shared], ["m0", "m1", "m2", "m3", "m4"])
+        top = duo_stats(self.shared)[0]
+        self.assertEqual(top, ((self.ali, "MissFortune", "UTILITY", self.lao, "Jhin", "BOTTOM"), 5, 4))
+
+    def test_brief_section(self):
+        names = {self.ali: "Ali", self.lao: "Lao", self.civa: "civa"}
+        champs = {"missfortune": "Miss Fortune", "jhin": "Jhin", "amumu": "Amumu"}
+        text = synergy_section(self.shared, names, champs)
+        self.assertIn("- Ali + Lao: 5 maç, %80", text)
+        self.assertIn("| Ali Miss Fortune (Support) + Lao Jhin (ADC) | 5 | %80 |", text)
+        self.assertIn("- Galibiyet · Ali Miss Fortune (Support), civa Amumu (Jungle), Lao Jhin (ADC)", text)
+        self.assertIn("maçı bulunamadı", synergy_section([], names, champs))
+
+    def test_team_brief_includes_section_and_role_counts(self):
+        ids = [self.ali, self.lao, self.civa]
+        ids += [self.store.create_profile(f"Ek{i}") for i in range(2)]
+        text = service.team_brief(self.store, [self.store.profile(i) for i in ids])
+        self.assertIn("## Birlikte oynadığınız maçlar", text)
+        self.assertIn("| Support 4 |", text)  # Ali'nin MF'si: rol + maç sayısı
+        self.assertIn("Meta rol kalıplarına takılma", text)
 
 
 class RateLimiterTest(unittest.TestCase):

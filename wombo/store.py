@@ -222,6 +222,23 @@ class Store:
             result.append({**dict(r), "champions": [c["champion"] for c in champs]})
         return result
 
+    def shared_rows(self, profile_ids):
+        """Profillerin maç satırları: hem kendi geçmişlerinden hem de başka bir hesabımızın
+        takım arkadaşı olarak gördüğü maçlardan. Aynı satır iki kaynaktan gelirse bir kez döner."""
+        if not profile_ids:
+            return []
+        ph = ",".join("?" * len(profile_ids))
+        return self.db.execute(
+            f"""
+            SELECT m.match_id, m.game_creation, m.queue_id, m.win, a.profile_id, m.champion, m.position
+            FROM matches m JOIN accounts a ON a.puuid = m.puuid
+            WHERE a.profile_id IN ({ph})
+            UNION
+            SELECT t.match_id, t.game_creation, t.queue_id, t.win, a.profile_id, t.champion, t.position
+            FROM teammates t JOIN accounts a ON a.puuid = t.mate_puuid
+            WHERE a.profile_id IN ({ph})
+            """, (*profile_ids, *profile_ids)).fetchall()
+
     def mate_riot_id(self, mate_puuid):
         row = self.db.execute("SELECT mate_riot_id FROM teammates WHERE mate_puuid = ? "
                               "ORDER BY game_creation DESC LIMIT 1", (mate_puuid,)).fetchone()

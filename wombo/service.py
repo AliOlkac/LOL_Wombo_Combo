@@ -11,9 +11,11 @@ import urllib.request
 from urllib.error import HTTPError
 
 from .pool import build_pool
+from .prompt import build_prompt
 from .riot import (PLATFORM_TO_REGION, USER_AGENT, RateLimiter, RiotClient, RiotError,
                    fetch_champions, platform_of)
 from .store import split_roles
+from .synergy import shared_matches
 
 DATA_DIR = "data"
 DEFAULT_DB = os.path.join(DATA_DIR, "wombo.db")
@@ -324,6 +326,13 @@ def update_account(client, store, account, max_matches=100, progress=None):
     store.set_mastery(puuid, rows)
     store.mark_updated(puuid, int(time.time()))
     return len(new_ids)
+
+
+def team_brief(store, profiles):
+    """5 profil için Claude brief'i: havuzlar + birlikte oynanan maçlardan ikililer."""
+    pools = [load_pool(store, p) for p in profiles]
+    shared = shared_matches(store.shared_rows([p["id"] for p in profiles]))
+    return build_prompt(pools, store.champion_names(), shared, {p["id"]: p["name"] for p in profiles})
 
 
 def load_pool(store, profile):

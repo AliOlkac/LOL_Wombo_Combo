@@ -5,7 +5,7 @@ import time
 
 from . import service
 from .pool import POSITION_NAMES, TIER_ALIASES, parse_roles
-from .prompt import build_prompt, player_section
+from .prompt import player_section
 from .riot import RiotError
 from .store import Store, split_roles
 
@@ -113,8 +113,7 @@ def cmd_extra(args, store):
 def cmd_team(args, store):
     if len(args.profiller) != 5:
         sys.exit("Takım için tam 5 profil adı ver.")
-    pools = [service.load_pool(store, store.profile(n)) for n in args.profiller]
-    text = build_prompt(pools, store.champion_names())
+    text = service.team_brief(store, [store.profile(n) for n in args.profiller])
     if args.cikti:
         with open(args.cikti, "w", encoding="utf-8") as f:
             f.write(text)
