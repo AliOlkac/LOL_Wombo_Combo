@@ -2,43 +2,65 @@
 
 5'li premade takım için **herkesin gerçekten oynayabildiği** şampiyonlardan wombo combo takımı kurmaya yardım eden araç.
 
-Program arkadaşlarının maç geçmişini ve mastery verisini **resmi Riot API**'den çeker. Her oyuncu için bir şampiyon havuzu hesaplar ve 5 kişilik takım için bir **brief** üretir. Bu brief'i Claude'a verirsin, wombo comp'ları Claude kurar. Kurallar brief'in içinde: her oyuncuya yalnızca kendi havuzundan şampiyon verilir, havuz dışı öneriler açıkça işaretlenir.
+Her arkadaşın için bir **profil** oluşturursun. Bir profile birden fazla Riot hesabı (smurf) bağlanabilir. Program bu hesapların maç geçmişini ve mastery verisini **resmi Riot API**'den çeker ve her profil için bir şampiyon havuzu çıkarır. Sonra o akşam oynayacak 5 kişiyi seçersin, program bir **brief** üretir. Brief'i Claude'a yapıştırırsın, wombo comp'ları Claude kurar. Kurallar brief'in içinde: her oyuncuya yalnızca kendi havuzundan şampiyon verilir, "oynamaz" denen rol verilmez, havuz dışı öneriler açıkça işaretlenir.
 
 ## Kurulum
 
-Python 3.10+ yeterli, ek paket gerekmez.
-
-1. Riot geliştirici anahtarını https://developer.riotgames.com adresinden al. Bu anahtar 24 saatte bir yenilenir. Kalıcı kullanım için oradan ücretsiz "Personal API Key" başvurusu yapılabilir.
-2. Anahtarı ortam değişkeni olarak ver. Anahtarı repoya yazma.
+Python 3.10+ yeterli, ek paket gerekmez. Windows'ta Python kurarken "Add to PATH" kutusunu işaretle.
 
 ```bash
-export RIOT_API_KEY="RGAPI-..."
+git clone https://github.com/AliOlkac/LOL_Wombo_Combo.git
 ```
 
-Windows PowerShell için: `$env:RIOT_API_KEY="RGAPI-..."`
+```bash
+cd LOL_Wombo_Combo
+```
 
-## Kullanım
+## Arayüz
 
 ```bash
-python -m wombo ekle "Arkadas#TR1" --ad ali       # oyuncu ekle
-python -m wombo guncelle                          # herkesin son 100 maçını + mastery'sini çek
+python -m wombo arayuz
+```
+
+Windows'ta `baslat.bat` dosyasına çift tıklamak da aynı işi görür. Tarayıcıda `http://127.0.0.1:8765` açılır. Arayüz yalnızca senin bilgisayarından erişilebilir.
+
+1. Sağ üstteki **Anahtar** düğmesinden Riot API anahtarını kaydet. Anahtarı https://developer.riotgames.com adresinden alırsın. Geliştirici anahtarı 24 saatte bir yenilenmeli; süresi geçince düğme sarıya döner.
+2. **Profil ekle**: arkadaşın adı ve Riot ID'si (`İsim#TR1`).
+3. **Herkesi güncelle**: maç geçmişlerini çeker. İlerleme üstte görünür.
+4. **Detay** panelinde şunları yapabilirsin:
+   - Rolleri işaretle. Her tıklama sırayla değiştirir: normal → tercih eder ✓ → oynamaz ✕.
+   - Not yaz (ör. "tank sever").
+   - Smurf hesap ekle.
+   - Havuza elle şampiyon ekle (ör. "Wukong, eski main").
+5. 5 kişiyi **Takıma ekle** → **Brief oluştur** → **Kopyala** → Claude'a yapıştır.
+
+Anahtar `data/riot_key.txt` dosyasında, veriler `data/wombo.db` dosyasında durur. `data/` klasörü git'e girmez.
+
+## Komut satırı
+
+Arayüzde yapılan her şey komut satırından da yapılabilir:
+
+```bash
+python -m wombo anahtar RGAPI-...
+python -m wombo ekle Ali "Ali#TR1"            # profil yoksa oluşturur
+python -m wombo ekle Ali "AliSmurf#TR1"       # aynı profile ikinci hesap
+python -m wombo guncelle                      # herkes (ya da: guncelle Ali Veli)
 python -m wombo liste
-python -m wombo havuz ali                         # ali'nin havuzunu gör
-python -m wombo ekstra ali Wukong --seviye esneme --not "eski main"   # elle şampiyon ekle
-python -m wombo takim ali veli ayse can ece -o brief.md               # Claude brief'i üret
+python -m wombo havuz Ali
+python -m wombo rol Ali --tercih top,jg --oynamaz sup --not "tank sever"
+python -m wombo ekstra Ali Wukong --seviye esneme --not "eski main"
+python -m wombo takim Ali Veli Ayşe Can Ece -o brief.md
 ```
 
-`brief.md` içeriğini Claude'a yapıştır. Claude 3 farklı wombo comp, combo sırası, kazanma planı, ban önerileri ve yedek pick'ler döner.
+Sunucu varsayılan olarak `tr1`. Değiştirmek için: `python -m wombo --sunucu euw1 ...`
 
-Seçenekler:
-- `--sunucu`: varsayılan `tr1`. Örnek: `python -m wombo --sunucu euw1 ...`
-- `guncelle --mac 200`: oyuncu başına daha fazla maç çeker.
+## Veri çekme süresi
 
-Yalnızca yeni maçlar indirilir, veriler `data/wombo.db` dosyasında saklanır. Geliştirici anahtarının hız limiti (2 dakikada 100 istek) yüzünden ilk güncelleme oyuncu başına birkaç dakika sürebilir.
+Geliştirici anahtarının limiti 2 dakikada 100 istek. Bir hesabın ilk güncellemesi (100 maç) yaklaşık **2 dakika** sürer. 10 arkadaş için ilk tam güncelleme bu yüzden 20-25 dakika sürebilir. Sonraki güncellemelerde yalnızca yeni maçlar indirilir, birkaç saniyede biter.
 
 ## Havuz nasıl hesaplanıyor?
 
-Yalnızca Sihirdar Vadisi maçları sayılır (ARAM ve diğer modlar hariç). Her şampiyona 0-100 arası bir **rahatlık skoru** verilir:
+Yalnızca Sihirdar Vadisi maçları sayılır (ARAM ve diğer modlar hariç). Bir profilin tüm hesaplarının maçları birleştirilir, mastery puanları toplanır. Her şampiyona 0-100 arası bir **rahatlık skoru** verilir:
 
 | Bileşen | Ağırlık | Not |
 |---|---|---|

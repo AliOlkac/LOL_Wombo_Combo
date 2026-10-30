@@ -2,7 +2,6 @@
 from .pool import MAIN, PLAYABLE, POSITION_NAMES, STRETCH
 from .store import _norm
 
-FLEX_BREADTH = 8      # bu kadar Main+Oynayabilir şampiyonu olan oyuncu "esnek" sayılır
 MAX_CHAMPS = 25       # oyuncu başına brief'e girecek en fazla şampiyon
 
 INSTRUCTIONS = f"""\
@@ -14,7 +13,8 @@ knockup/çekme ve AoE hasar ultilerinden oluşan diziliş.
 ## Kurallar
 - Her oyuncuya yalnızca **kendi havuzundaki** şampiyonlardan ver.
   Tercih sırası: {MAIN} > {PLAYABLE} > {STRETCH}. Comp başına en fazla bir {STRETCH} pick olsun.
-- Rolleri oyuncuların rol dağılımına göre dağıt; her rol (Top, Jungle, Mid, ADC, Support) bir kez.
+- Her rol (Top, Jungle, Mid, ADC, Support) bir kez. Rolleri oyuncuların rol dağılımına ve
+  tercihlerine göre dağıt. **"Oynamaz" yazan rol o oyuncuya asla verilmez.**
 - **Esnek** işaretli oyunculara, havuzlarında olmasa da oynadıklarına çok benzeyen bir
   şampiyon önerebilirsin. Bunu mutlaka "havuz dışı öneri" diye işaretle ve neden benzediğini söyle.
 - Gerçekçi ol: combo'nun parçalarından biri oyuncunun zayıf şampiyonuysa bunu belirt.
@@ -35,11 +35,25 @@ def _pct(x):
     return f"%{round(x * 100)}"
 
 
+def _roles(roles):
+    return ", ".join(POSITION_NAMES.get(r, r) for r in roles)
+
+
 def player_section(pool, names):
-    flexible = pool.breadth >= FLEX_BREADTH
-    title = f"### {pool.nickname} ({pool.riot_id})" + (" — Esnek" if flexible else "")
-    roles = ", ".join(f"{POSITION_NAMES.get(p, p)} {_pct(s)}" for p, s in pool.role_share.items())
-    lines = [title, f"Son {pool.sr_games} Sihirdar Vadisi maçı. Rol dağılımı: {roles or 'veri yok'}", ""]
+    title = f"### {pool.name}"
+    if pool.riot_ids:
+        title += f" ({', '.join(pool.riot_ids)})"
+    if pool.flexible:
+        title += " — Esnek"
+    share = ", ".join(f"{POSITION_NAMES.get(p, p)} {_pct(s)}" for p, s in pool.role_share.items())
+    lines = [title, f"Son {pool.sr_games} Sihirdar Vadisi maçı. Rol dağılımı: {share or 'veri yok'}"]
+    if pool.preferred_roles:
+        lines.append(f"Tercih ettiği roller: {_roles(pool.preferred_roles)}")
+    if pool.avoided_roles:
+        lines.append(f"Oynamaz: {_roles(pool.avoided_roles)}")
+    if pool.note:
+        lines.append(f"Not: {pool.note}")
+    lines.append("")
     if not pool.champions:
         lines.append("_Havuz boş: maç verisi yok._")
         return "\n".join(lines)

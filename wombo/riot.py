@@ -1,6 +1,7 @@
 """Riot Games API ve Data Dragon istemcisi (yalnızca standart kütüphane)."""
 import json
 import os
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -22,6 +23,10 @@ class RiotError(Exception):
     pass
 
 
+class RiotAuthError(RiotError):
+    """Anahtar yok, geçersiz ya da süresi dolmuş."""
+
+
 class RateLimiter:
     """Kayan pencere limitleyici. Varsayılan: geliştirici anahtarı limitleri."""
 
@@ -30,8 +35,13 @@ class RateLimiter:
         self.calls = deque()
         self.clock = clock
         self.sleep = sleep
+        self.lock = threading.Lock()
 
     def wait(self):
+        with self.lock:
+            self._wait()
+
+    def _wait(self):
         longest = max(w for _, w in self.limits)
         while True:
             now = self.clock()
@@ -52,9 +62,9 @@ class RiotClient:
     def __init__(self, api_key=None, platform="tr1", limiter=None):
         self.api_key = api_key or os.environ.get("RIOT_API_KEY")
         if not self.api_key:
-            raise RiotError(
-                "RIOT_API_KEY ortam değişkeni tanımlı değil. "
-                "Anahtarı https://developer.riotgames.com adresinden alabilirsin."
+            raise RiotAuthError(
+                "Riot API anahtarı yok. Arayüzden kaydet ya da RIOT_API_KEY ortam değişkenini tanımla "
+                "(anahtar: https://developer.riotgames.com)."
             )
         self.platform = platform.lower()
         if self.platform not in PLATFORM_TO_REGION:
@@ -76,7 +86,7 @@ class RiotClient:
                 if e.code == 404:
                     return None
                 if e.code in (401, 403):
-                    raise RiotError(
+                    raise RiotAuthError(
                         "API anahtarı geçersiz ya da süresi dolmuş "
                         "(geliştirici anahtarları 24 saatte bir yenilenmeli)."
                     ) from e
@@ -105,9 +115,9 @@ class RiotClient:
 
 
 def fetch_champions():
-    """Data Dragon'dan şampiyon listesi: [(sayısal_id, ddragon_id, görünen_ad)]."""
+    """Data Dragon'dan güncel sürüm ve şampiyon listesi: (sürüm, [(sayısal_id, ddragon_id, ad)])."""
     with urllib.request.urlopen(f"{DDRAGON}/api/versions.json", timeout=30) as resp:
         version = json.load(resp)[0]
     with urllib.request.urlopen(f"{DDRAGON}/cdn/{version}/data/en_US/champion.json", timeout=30) as resp:
         data = json.load(resp)["data"]
-    return [(int(c["key"]), c["id"], c["name"]) for c in data.values()]
+    return version, [(int(c["key"]), c["id"], c["name"]) for c in data.values()]

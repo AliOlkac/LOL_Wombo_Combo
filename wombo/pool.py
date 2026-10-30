@@ -14,8 +14,30 @@ TIER_ORDER = {MAIN: 0, PLAYABLE: 1, STRETCH: 2}
 TIER_ALIASES = {"main": MAIN, "oynayabilir": PLAYABLE, "esneme": STRETCH}
 
 POSITION_NAMES = {"TOP": "Top", "JUNGLE": "Jungle", "MIDDLE": "Mid", "BOTTOM": "ADC", "UTILITY": "Support"}
+ROLE_ALIASES = {
+    "top": "TOP", "ust": "TOP",
+    "jungle": "JUNGLE", "jg": "JUNGLE", "jungler": "JUNGLE", "orman": "JUNGLE",
+    "mid": "MIDDLE", "middle": "MIDDLE", "orta": "MIDDLE",
+    "adc": "BOTTOM", "bot": "BOTTOM", "bottom": "BOTTOM",
+    "support": "UTILITY", "sup": "UTILITY", "supp": "UTILITY", "destek": "UTILITY", "utility": "UTILITY",
+}
+
+
+def parse_roles(text):
+    """'jg, mid' -> ['JUNGLE', 'MIDDLE']. Bilinmeyen rol için ValueError."""
+    roles = []
+    for part in (text or "").replace(" ", "").split(","):
+        if not part:
+            continue
+        role = ROLE_ALIASES.get(part.lower()) or (part.upper() if part.upper() in POSITION_NAMES else None)
+        if role is None:
+            raise ValueError(f"Bilinmeyen rol: {part}")
+        if role not in roles:
+            roles.append(role)
+    return roles
 
 DAY_MS = 86_400_000
+FLEX_BREADTH = 8  # bu kadar Main+Oynayabilir şampiyonu olan oyuncu "esnek" sayılır
 
 
 @dataclass
@@ -87,18 +109,27 @@ def tier_for(stat):
 
 @dataclass
 class PlayerPool:
-    nickname: str
-    riot_id: str
+    name: str
+    riot_ids: list
     champions: list
     role_share: dict
     sr_games: int
+    preferred_roles: list = field(default_factory=list)
+    avoided_roles: list = field(default_factory=list)
+    note: str = ""
 
     @property
     def breadth(self):
         return sum(1 for c in self.champions if c.tier in (MAIN, PLAYABLE))
 
+    @property
+    def flexible(self):
+        return self.breadth >= FLEX_BREADTH
 
-def build_pool(match_rows, mastery_rows, extra_rows, nickname="", riot_id="", now_ms=None):
+
+def build_pool(match_rows, mastery_rows, extra_rows, name="", riot_ids=(), preferred_roles=(),
+               avoided_roles=(), note="", now_ms=None):
+    """Bir profilin (tüm hesaplarının) verisinden şampiyon havuzunu çıkarır."""
     now_ms = now_ms or int(time.time() * 1000)
     stats = {}
 
@@ -123,10 +154,10 @@ def build_pool(match_rows, mastery_rows, extra_rows, nickname="", riot_id="", no
             s.positions[m["position"]] += 1
             roles[m["position"]] += 1
 
-    for r in mastery_rows:
+    for r in mastery_rows:  # birden fazla hesap varsa puanlar toplanır
         s = get(r["champion"])
-        s.mastery_points = r["points"]
-        s.mastery_level = r["level"]
+        s.mastery_points += r["points"]
+        s.mastery_level = max(s.mastery_level, r["level"])
 
     for r in extra_rows:
         s = get(r["champion"])
@@ -144,4 +175,5 @@ def build_pool(match_rows, mastery_rows, extra_rows, nickname="", riot_id="", no
     total = sum(roles.values())
     role_share = {pos: n / total for pos, n in roles.most_common()} if total else {}
     sr_games = sum(1 for m in match_rows if m["queue_id"] in SR_QUEUES)
-    return PlayerPool(nickname, riot_id, champions, role_share, sr_games)
+    return PlayerPool(name, list(riot_ids), champions, role_share, sr_games,
+                      list(preferred_roles), list(avoided_roles), note or "")
