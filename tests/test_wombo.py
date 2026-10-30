@@ -599,6 +599,29 @@ class RankAndNotesTest(unittest.TestCase):
             self.assertIn(must, text)
 
 
+class SpecialNoteTest(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+        self.addCleanup(self.store.close)
+        self.ids = seed_team(self.store)
+
+    def brief(self, note=None):
+        return service.team_brief(self.store, [self.store.profile(i) for i in self.ids], "karma", note)
+
+    def test_note_goes_to_the_top_and_wins_over_rules(self):
+        text = self.brief("Bu akşam eğlence modu.\nAli mid istemiyor.")
+        self.assertTrue(text.startswith("# Wombo combo koçluk isteği\n\n## Özel notumuz (bu seferki öncelik)\n\n"
+                                        "> Bu akşam eğlence modu.\n> Ali mid istemiyor.\n"))
+        self.assertIn("özel notu uygula", text)
+        self.assertLess(text.index("Özel notumuz"), text.index("## Oyuncular"))
+
+    def test_no_note_no_trace(self):
+        for note in (None, "", "   \n "):
+            text = self.brief(note)
+            self.assertNotIn("Özel notumuz", text)
+            self.assertNotIn("özel notu uygula", text)
+
+
 class RateLimiterTest(unittest.TestCase):
     def test_waits_when_window_full(self):
         t = [0.0]
@@ -784,6 +807,11 @@ class WebApiTest(unittest.TestCase):
         self.assertEqual(state["version"], __version__)
         code, r = self.call("POST", "/api/brief", {"profile_ids": self.ids})
         self.assertIn(f"_Brief formatı v{__version__}_", r["text"])
+
+    def test_brief_with_special_note(self):
+        code, r = self.call("POST", "/api/brief", {"profile_ids": self.ids, "note": "Rakip çok poke'lu"})
+        self.assertEqual(code, 200)
+        self.assertIn("> Rakip çok poke'lu", r["text"].split("## Oyuncular")[0])
 
     def test_notes_api_and_rank_label(self):
         code, notes = self.call("GET", "/api/notes")

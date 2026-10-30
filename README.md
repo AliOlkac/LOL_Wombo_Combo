@@ -37,6 +37,8 @@ Windows'ta `baslat.bat` dosyasına çift tıklamak da aynı işi görür. Taray�
    - **Hepsi sağlam**
    - **Çoğu deneysel (troll ama güçlü):** meta ve lane kalıbı dışı fikirler (iki AP bot, ADC'siz diziliş, mid'de support vb.)
 
+**Özel not:** Brief penceresinin üstündeki kutuya bu seferlik bir not yazıp **Notu uygula**'ya basarsan not brief'in en üstüne girer ve kurallardan önce gelir. Örnekler: "bu akşam eğlence modu", "Ali mid istemiyor", "rakip çok poke'lu". Not hatırlanır; boşaltıp uygularsan kaldırılır.
+
 Üstteki **100/200/300 maç** seçimi hesap başına ne kadar geçmiş çekileceğini belirler. Daha derin geçmiş daha çok şampiyon ve kanıtlanmış ikili demek, ama daha uzun sürer.
 
 Brief'te her oyuncu için şunlar yer alır:
@@ -100,6 +102,7 @@ python -m wombo not Locke "kaosu fırsata çevirir, tek atar"     # şampiyon no
 python -m wombo not                                             # tüm notlar
 python -m wombo takim Ali Veli Ayşe Can Ece -o brief.md
 python -m wombo takim Ali Veli Ayşe Can Ece --mod deneysel   # karma | klasik | deneysel
+python -m wombo takim Ali Veli Ayşe Can Ece --ozel-not "bu akşam eğlence modu"
 python -m wombo guncelle --mac 300                            # daha derin geçmiş
 ```
 

@@ -376,7 +376,7 @@ def ensure_kits(store, ddids, limit=None):
     return have
 
 
-def team_brief(store, profiles, mode="karma"):
+def team_brief(store, profiles, mode="karma", special_note=None):
     """5 profil için Claude brief'i: havuzlar, rol matrisi, ortak maçlar, ulti özetleri."""
     pools = [load_pool(store, p) for p in profiles]
     shared = shared_matches(store.shared_rows([p["id"] for p in profiles]))
@@ -387,7 +387,8 @@ def team_brief(store, profiles, mode="karma"):
     in_pools = {_norm(d) for d in ddids}
     notes = {d: n for d, n in store.notes().items() if _norm(d) in in_pools}
     return build_prompt(pools, store.champion_names(), shared, {p["id"]: p["name"] for p in profiles},
-                        mode=mode, kits=kits, patch=store.ddragon_version(), notes=notes)
+                        mode=mode, kits=kits, patch=store.ddragon_version(), notes=notes,
+                        special_note=special_note)
 
 
 def load_pool(store, profile):

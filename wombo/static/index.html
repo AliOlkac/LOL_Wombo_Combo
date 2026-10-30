@@ -169,6 +169,7 @@ td .ic { width: 28px; height: 28px; border-radius: 6px; }
 details summary { cursor: pointer; color: var(--gold); }
 details[open] summary { margin-bottom: 4px; }
 .modal h2 { margin: 0; font-size: 17px; }
+.modal #briefNote { min-height: 0; flex: 1; font: inherit; resize: vertical; }
 .modal textarea { width: 100%; min-height: 50vh; resize: vertical; font: 12px/1.5 ui-monospace, Consolas, monospace; }
 .modal .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 
@@ -251,6 +252,12 @@ details[open] summary { margin-bottom: 4px; }
 <div class="modal" id="briefModal" role="dialog" aria-label="Claude brief">
   <h2>Claude brief'i</h2>
   <p class="muted small" style="margin:0">Bunu kopyalayıp Claude'a yapıştır. Comp'ları bu havuzlara göre kuracak.</p>
+  <label class="small" for="briefNote">Özel not: brief'in en üstüne eklenir ve kurallardan önce gelir
+    (ör. "bu akşam eğlence modu, Ali mid istemiyor"). Hatırlanır; boş bırakırsan eklenmez.</label>
+  <div class="inline">
+    <textarea id="briefNote" rows="2" maxlength="1500" placeholder="Özel not (isteğe bağlı)"></textarea>
+    <button id="applyNote">Notu uygula</button>
+  </div>
   <textarea id="briefText" readonly></textarea>
   <div class="actions">
     <button id="closeBrief">Kapat</button>
@@ -306,7 +313,7 @@ details[open] summary { margin-bottom: 4px; }
 <datalist id="champList"></datalist>
 
 <script>
-const UI_VERSION = "0.9.0";  // wombo/__init__.py içindeki __version__ ile aynı olmalı
+const UI_VERSION = "0.10.0";  // wombo/__init__.py içindeki __version__ ile aynı olmalı
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ROLE_ORDER = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
@@ -878,11 +885,26 @@ $("#copyDiag").addEventListener("click", async () => {
   catch (e) { ta.select(); document.execCommand("copy"); }
   toast("Rapor kopyalandı.");
 });
-$("#makeBrief").addEventListener("click", () => run(async () => {
-  const { text } = await api("POST", "/api/brief", { profile_ids: selected, mode: $("#mode").value });
+function savedNote() {
+  try { return localStorage.getItem("wombo.note") || ""; } catch (e) { return ""; }
+}
+
+async function loadBrief(note) {
+  const { text } = await api("POST", "/api/brief", { profile_ids: selected, mode: $("#mode").value, note });
   $("#briefText").value = text;
+}
+
+$("#makeBrief").addEventListener("click", () => run(async () => {
+  $("#briefNote").value = savedNote();
+  await loadBrief(savedNote());
   $("#briefModal").classList.add("show");
   $("#overlay").classList.add("show");
+}));
+$("#applyNote").addEventListener("click", () => run(async () => {
+  const note = $("#briefNote").value.trim();
+  try { localStorage.setItem("wombo.note", note); } catch (e) {}
+  await loadBrief(note);
+  toast(note ? "Özel not brief'in en üstüne eklendi." : "Özel not kaldırıldı.");
 }));
 $("#closeBrief").addEventListener("click", () => $("#overlay").click());
 $("#copyBrief").addEventListener("click", async () => {

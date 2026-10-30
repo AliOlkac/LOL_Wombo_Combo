@@ -291,7 +291,8 @@ def api_brief(h, store):
     if len(ids) != 5 or len(set(ids)) != 5:
         raise ValueError("Brief için tam 5 farklı profil seç.")
     mode = h.body().get("mode") or "karma"
-    return {"text": service.team_brief(store, [store.profile(i) for i in ids], mode)}
+    note = h.body().get("note") or ""
+    return {"text": service.team_brief(store, [store.profile(i) for i in ids], mode, note)}
 
 
 def api_save_key(h, store):

@@ -113,7 +113,7 @@ def cmd_extra(args, store):
 def cmd_team(args, store):
     if len(args.profiller) != 5:
         sys.exit("Takım için tam 5 profil adı ver.")
-    text = service.team_brief(store, [store.profile(n) for n in args.profiller], args.mod)
+    text = service.team_brief(store, [store.profile(n) for n in args.profiller], args.mod, args.ozel_not)
     if args.cikti:
         with open(args.cikti, "w", encoding="utf-8") as f:
             f.write(text)
@@ -227,6 +227,7 @@ def main(argv=None):
     p.add_argument("-o", "--cikti", help="Brief'i dosyaya yaz")
     p.add_argument("--mod", choices=list(MODES), default="karma",
                    help="karma: ⅓ deneysel (varsayılan), klasik: hepsi sağlam, deneysel: çoğu deneysel")
+    p.add_argument("--ozel-not", help="Brief'in en üstüne eklenecek not, ör. 'bu akşam eğlence modu'")
     p.set_defaults(func=cmd_team)
 
     args = parser.parse_args(argv)

@@ -47,7 +47,19 @@ def _check_mode(mode):
         raise ValueError(f"Bilinmeyen mod: {mode}. Seçenekler: {', '.join(MODES)}")
 
 
-def task_intro(mode="karma", patch=None):
+MAX_NOTE = 1500  # özel notun en fazla karakter sayısı
+
+
+def special_note_section(note):
+    """Kullanıcının bu brief için yazdığı serbest not: brief'in en üstüne, alıntı olarak."""
+    note = (note or "").strip()[:MAX_NOTE]
+    if not note:
+        return ""
+    quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in note.splitlines())
+    return f"## Özel notumuz (bu seferki öncelik)\n\n{quoted}\n\n"
+
+
+def task_intro(mode="karma", patch=None, note=None):
     """Brief'in başı: rol, amaç ve bağlam. Ayrıntılı kurallar verinin ardından gelir."""
     _check_mode(mode)
     mix = {"klasik": "Hepsi sağlam olsun.",
@@ -57,7 +69,7 @@ def task_intro(mode="karma", patch=None):
     return f"""\
 # Wombo combo koçluk isteği
 
-Sen deneyimli bir League of Legends koçu ve analistisin. Türkçe, **kısa ve öz** cevap ver.
+{special_note_section(note)}Sen deneyimli bir League of Legends koçu ve analistisin. Türkçe, **kısa ve öz** cevap ver.
 Aşağıda 5 kişilik premade takımımızın gerçek maç verisi var ({source}).
 Bize **{CORE_COUNT} farklı öneri** ver (en az {MIN_CORES}; 3-4 comp ile yetinme): **yaklaşık
 yarısı tam 5'li comp**, kalanı 3-4 kişilik wombo çekirdeği. {mix}
@@ -73,14 +85,16 @@ Hepimiz aynı takımda ve sesli iletişimdeyiz: zamanlama isteyen ulti zincirler
 """
 
 
-def rules_and_format(mode="karma"):
+def rules_and_format(mode="karma", has_note=False):
     """Brief'in sonu: kurallar, mekanik doğruluk, çeşitlilik ve kısa çıktı formatı."""
     _check_mode(mode)
     stretch_limit = "iki" if mode == "deneysel" else "bir"
     experimental = EXPERIMENTAL if mode != "klasik" else ""
+    note_rule = ("\n**En üstteki özel not bu seferki isteğimizdir; aşağıdaki kurallarla çelişirse "
+                 "özel notu uygula.**\n" if has_note else "")
     return f"""\
 # Kurallar
-
+{note_rule}
 ## Havuz ve roller
 - Her oyuncuya yalnızca **kendi havuzundaki** şampiyonlardan ver.
   Tercih sırası: {MAIN} > {PLAYABLE} > {STRETCH}. Öneri başına en fazla {stretch_limit} {STRETCH} pick olsun.
@@ -321,10 +335,10 @@ def kits_section(kits, names, patch=None):
 
 
 def build_prompt(pools, names, shared=None, profile_names=None, mode="karma", kits=None, patch=None,
-                 notes=None):
+                 notes=None, special_note=None):
     """shared: synergy.shared_matches çıktısı; profile_names: profil id -> ad; mode: MODES anahtarı;
     kits: ddragon_id -> ulti özeti; patch: Data Dragon sürümü; notes: ddragon_id -> grubun notu."""
-    parts = [task_intro(mode, patch), "## Oyuncular", "", LEGEND, ""]
+    parts = [task_intro(mode, patch, special_note), "## Oyuncular", "", LEGEND, ""]
     parts += [player_section(p, names) + "\n" for p in pools]
     parts.append(role_matrix_section(pools, names) + "\n")
     if shared is not None:
@@ -335,5 +349,5 @@ def build_prompt(pools, names, shared=None, profile_names=None, mode="karma", ki
     kit_text = kits_section(kits, names, patch)
     if kit_text:
         parts.append(kit_text + "\n")
-    parts.append(rules_and_format(mode))
+    parts.append(rules_and_format(mode, has_note=bool((special_note or "").strip())))
     return "\n".join(parts)
