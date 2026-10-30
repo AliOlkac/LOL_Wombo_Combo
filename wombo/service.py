@@ -132,6 +132,9 @@ def create_profile(store, client_factory, name, riot_id=None):
     if not riot_id:
         return store.create_profile(name), None
     puuid, full_id = resolve_account(client_factory(), riot_id)
+    owner = store.account_owner(puuid)
+    if owner is not None and owner["name"].lower() == name.lower():
+        return owner["id"], full_id  # zaten ekli: tekrar basmak hata değil
     _check_not_taken(store, puuid, full_id)
     existing = store.find_profile(name)
     if existing is not None and store.accounts(existing["id"]):

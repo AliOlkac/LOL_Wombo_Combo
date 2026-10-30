@@ -451,6 +451,40 @@ class WebApiTest(unittest.TestCase):
             code, r = self.call("POST", "/api/key/test")
         self.assertTrue(r["key_ok"])
 
+    def test_adding_account_starts_update_and_finds_friends(self):
+        class FullClient(FakeClient, AccountClient):
+            def __init__(self):
+                FakeClient.__init__(self, friend_matches())
+                AccountClient.__init__(self)
+
+        with mock.patch.object(service, "make_client", lambda platform="tr1": FullClient()), \
+                mock.patch.object(service, "ensure_champions", lambda store, force=False: None), \
+                mock.patch.object(service, "load_api_key", lambda key_file=None: FAKE_KEY):
+            code, r = self.call("POST", "/api/profiles", {"name": "Oqila", "riot_id": "Oqila#4310"})
+            self.assertEqual(code, 200)
+            self.assertIn(r["id"], r["job"]["waiting"] or [r["id"]])
+            for _ in range(100):  # arka plan işi bitene kadar bekle
+                code, job = self.call("GET", "/api/job")
+                if not job["running"]:
+                    break
+                threading.Event().wait(0.05)
+            self.assertEqual(job["errors"], [])
+            # aynı hesabı tekrar eklemek hata değil
+            code, again = self.call("POST", "/api/profiles", {"name": "Oqila", "riot_id": "Oqila#4310"})
+            self.assertEqual((code, again["id"]), (200, r["id"]))
+        code, state = self.call("GET", "/api/state")
+        me = next(p for p in state["profiles"] if p["name"] == "Oqila")
+        self.assertEqual(me["sr_games"], 5)
+        self.assertEqual([f["riot_id"] for f in state["friends"]], ["Ayşe#TR1", "Can#TR1"])
+
+    def test_update_requests_are_queued_while_running(self):
+        from wombo.web import UpdateJob
+        job = UpdateJob(self.db, "tr1")
+        job.state.update(running=True, waiting=[1, 2])
+        job.start([2, 3, 3, 1])  # 1 şu an işleniyor: tekrar sona eklenir; 2 zaten sırada
+        self.assertEqual(job.snapshot()["waiting"], [1, 2, 3, 1])
+        self.assertEqual(job.snapshot()["count"], 4)
+
     def test_non_json_post_is_rejected(self):
         code, _ = self.call("POST", "/api/profiles", {"name": "X"}, content_type="text/plain")
         self.assertEqual(code, 415)

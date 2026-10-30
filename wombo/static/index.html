@@ -106,6 +106,8 @@ main { max-width: 1280px; margin: 0 auto; padding: 18px 16px 120px; }
 
 .form-error { flex-basis: 100%; margin: 2px 0 0; color: var(--danger); font-size: 13px; }
 .form-error:empty { display: none; }
+.form-error.ok { color: var(--ok); }
+.status-live { color: var(--teal); }
 .notice { border: 1px solid var(--gold); background: rgba(200,170,110,.08); border-radius: var(--radius);
   padding: 12px 14px; margin-bottom: 16px; display: none; gap: 12px; align-items: center; flex-wrap: wrap; }
 .notice.show { display: flex; }
@@ -304,7 +306,8 @@ function toast(text, isError = false) {
   t._timer = setTimeout(() => t.className = "toast", isError ? 6000 : 2500);
 }
 
-// Formun altında kalıcı hata gösterir; istek sürerken düğmeyi kilitler
+// Formun altında kalıcı mesaj gösterir (hata kırmızı, fn'in döndürdüğü başarı mesajı yeşil);
+// istek sürerken düğmeyi kilitler
 async function submitForm(form, fn, busyText = "Kontrol ediliyor…") {
   let err = form.querySelector(".form-error");
   if (!err) {
@@ -314,12 +317,17 @@ async function submitForm(form, fn, busyText = "Kontrol ediliyor…") {
     form.appendChild(err);
   }
   err.textContent = "";
+  err.classList.remove("ok");
   const btn = form.querySelector("button");
   const label = btn.textContent;
   btn.disabled = true;
   btn.textContent = busyText;
   try {
-    await fn();
+    const message = await fn();
+    if (message) {
+      err.textContent = message;
+      err.classList.add("ok");
+    }
   } catch (e) {
     err.textContent = e.message;
   } finally {
@@ -381,10 +389,20 @@ function prefChips(p) {
   return chips.length ? `<div class="prefs">${chips.join("")}</div>` : "";
 }
 
+function cardStatus(p, job) {
+  if (job.running && job.profile_id === p.id) {
+    return { live: true, text: job.total ? `Güncelleniyor… ${job.done}/${job.total} maç` : "Güncelleniyor…" };
+  }
+  if (job.running && job.waiting.includes(p.id)) return { live: true, text: "Güncelleme sırasında" };
+  if (!p.accounts.length) return { live: false, text: "Hesap yok" };
+  const last = Math.max(...p.accounts.map(a => a.last_update || 0));
+  return { live: false, text: `${p.sr_games} maç · ${ago(last)}` };
+}
+
 function card(p) {
   const sel = selected.includes(p.id);
+  const status = cardStatus(p, state.job);
   const ids = p.accounts.map(a => esc(a.riot_id)).join(" · ") || "Hesap eklenmedi";
-  const last = p.accounts.length ? Math.max(...p.accounts.map(a => a.last_update || 0)) : 0;
   const counts = TIERS.map(t => `<span><b class="${t}">${p.counts[t]}</b> ${t}</span>`).join("");
   return `<article class="card ${sel ? "sel" : ""}">
     <div class="card-head">
@@ -399,7 +417,7 @@ function card(p) {
     <div class="icons">${p.champions.map(icon).join("") || `<span class="small muted">Havuz boş, verisini güncelle.</span>`}</div>
     <div class="counts">${counts}</div>
     <div class="card-foot">
-      <span class="small muted">${p.sr_games} maç · ${ago(last)}</span>
+      <span class="small ${status.live ? "status-live" : "muted"}" data-status="${p.id}">${esc(status.text)}</span>
       <div class="spacer"></div>
       ${p.accounts.length ? "" : `<button class="ghost danger" data-del-profile="${p.id}">Sil</button>`}
       <button data-open="${p.id}">Detay</button>
@@ -472,7 +490,9 @@ function renderFriends() {
       <div class="spacer"></div>
       <button class="ghost small" id="friendMin">${friendMin === 3 ? "2 maç olanları da göster" : "Sadece 3+ maç"}</button>
     </div>
-    ${rows || `<div class="small muted">Henüz öneri yok. Hesaplar güncellenince birlikte oynadığın oyuncular burada çıkar.</div>`}`;
+    ${rows || `<div class="small muted">${state.job.running
+      ? "Maç verisi çekiliyor; bittikçe seninle sık oynayan oyuncular burada çıkacak."
+      : "Henüz öneri yok. Hesaplar güncellenince birlikte oynadığın oyuncular burada çıkar."}</div>`}`;
 }
 
 function renderJob(job) {
@@ -484,9 +504,16 @@ function renderJob(job) {
   if (job.running && job.total) text += ` (${job.done}/${job.total})`;
   if (job.errors.length) text += ` · ${job.errors.length} hata: ${job.errors.join(" | ")}`;
   $("#jobText").textContent = text;
-  $("#jobCount").textContent = job.count ? `Hesap ${job.index}/${job.count}` : "";
-  const frac = job.count ? ((job.index - 1) + (job.total ? job.done / job.total : 0)) / job.count : 0;
+  $("#jobCount").textContent = job.running && job.count ? `Profil ${Math.min(job.completed + 1, job.count)}/${job.count}` : "";
+  const frac = job.count ? (job.completed + (job.total ? job.done / job.total : 0)) / job.count : 0;
   $("#jobBar").style.width = `${Math.round((job.running ? frac : 1) * 100)}%`;
+  for (const p of state.profiles) {
+    const el = document.querySelector(`[data-status="${p.id}"]`);
+    if (!el) continue;
+    const st = cardStatus(p, job);
+    el.textContent = st.text;
+    el.className = "small " + (st.live ? "status-live" : "muted");
+  }
 }
 
 async function load() {
@@ -501,8 +528,10 @@ function startPolling() {
   pollTimer = setInterval(async () => {
     const job = await api("GET", "/api/job").catch(() => null);
     if (!job) return;
+    const profileFinished = job.running && job.completed !== state.job.completed;
     state.job = job;
     renderJob(job);
+    if (profileFinished) await load();
     if (!job.running) {
       clearInterval(pollTimer);
       pollTimer = null;
@@ -511,6 +540,13 @@ function startPolling() {
       toast(job.errors.length ? "Güncelleme hatalarla bitti." : "Güncelleme tamamlandı.", job.errors.length > 0);
     }
   }, 1500);
+}
+
+function followJob(job) {
+  if (!job) return;
+  state.job = job;
+  renderJob(job);
+  if (job.running) startPolling();
 }
 
 async function startUpdate(profileIds) {
@@ -659,14 +695,16 @@ document.addEventListener("submit", e => {
   if (f.dataset.friend) {
     run(async () => {
       const r = await api("POST", "/api/friends", { puuid: f.dataset.friend, name: data.name, profile_id: data.profile_id });
-      toast(`${r.riot_id} eklendi. Verisini çekmek için güncelle.`);
+      toast(`${r.riot_id} eklendi, verisi çekiliyor.`);
       await load();
+      followJob(r.job);
     });
   } else if (f.id === "addAccount") {
     submitForm(f, async () => {
       const r = await api("POST", `/api/profiles/${detail.id}/accounts`, data);
-      toast(`${r.riot_id} eklendi. Şimdi güncelle.`);
+      toast(`${r.riot_id} eklendi, verisi çekiliyor.`);
       await load();
+      followJob(r.job);
       await openDrawer(openId);
     });
   } else if (f.id === "addExtra") {
@@ -679,8 +717,12 @@ document.addEventListener("submit", e => {
     submitForm(f, async () => {
       const r = await api("POST", "/api/profiles", data);
       f.reset();
-      toast(r.riot_id ? `${r.riot_id} eklendi. Şimdi "Herkesi güncelle"ye bas.` : "Profil eklendi.");
       await load();
+      followJob(r.job);
+      if (!r.riot_id) return "✓ Profil eklendi. Detay panelinden Riot hesabı ekleyebilirsin.";
+      return r.job && r.job.running
+        ? `✓ ${r.riot_id} eklendi. Maç verisi otomatik çekiliyor (hesap başına ~2 dk), ilerlemesi kartta görünür.`
+        : `✓ ${r.riot_id} eklendi.`;
     });
   } else if (f.id === "diagForm") {
     submitForm(f, async () => {
@@ -699,6 +741,11 @@ document.addEventListener("submit", e => {
       fillKeyInfo();
     }, "Test ediliyor…");
   }
+});
+
+document.addEventListener("input", e => {
+  const msg = e.target.form && e.target.form.querySelector(".form-error");
+  if (msg) msg.textContent = "";
 });
 
 document.addEventListener("change", e => {

@@ -23,18 +23,26 @@ STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
 class UpdateJob:
-    """Arka planda veri çekme işi. Aynı anda tek iş çalışır."""
+    """Arka planda veri çekme işi. Yeni istekler sıraya eklenir; profiller tek tek işlenir."""
 
     def __init__(self, db_path, platform):
         self.db_path = db_path
         self.platform = platform
         self.lock = threading.Lock()
-        self.state = {"running": False, "message": "", "account": "", "done": 0, "total": 0,
-                      "index": 0, "count": 0, "errors": [], "finished_at": None}
+        self.state = self._fresh(running=False)
+
+    @staticmethod
+    def _fresh(running):
+        # waiting: işlenmeyi bekleyen profil id'leri (ilk eleman = şu an işlenen)
+        return {"running": running, "message": "", "account": "", "profile_id": None,
+                "done": 0, "total": 0, "completed": 0, "waiting": [], "errors": [],
+                "finished_at": None}
 
     def snapshot(self):
         with self.lock:
-            return {**self.state, "errors": list(self.state["errors"])}
+            return {**self.state, "errors": list(self.state["errors"]),
+                    "waiting": list(self.state["waiting"]),
+                    "count": self.state["completed"] + len(self.state["waiting"])}
 
     def _set(self, **fields):
         with self.lock:
@@ -45,40 +53,61 @@ class UpdateJob:
             self.state["errors"].append(text)
 
     def start(self, profile_ids):
+        """Profilleri sıraya ekler; iş çalışmıyorsa başlatır."""
         with self.lock:
             if self.state["running"]:
-                raise ValueError("Zaten bir güncelleme çalışıyor.")
-            self.state = {"running": True, "message": "Başlıyor", "account": "", "done": 0,
-                          "total": 0, "index": 0, "count": 0, "errors": [], "finished_at": None}
-        threading.Thread(target=self._run, args=(profile_ids,), daemon=True).start()
+                # şu an işlenen profil tekrar istendiyse (ör. yeni hesap eklendi) sona yeniden eklenir
+                queued = self.state["waiting"][1:]
+                self.state["waiting"] += [i for i in dict.fromkeys(profile_ids) if i not in queued]
+                return
+            self.state = self._fresh(running=True)
+            self.state["message"] = "Başlıyor"
+            self.state["waiting"] = list(dict.fromkeys(profile_ids))
+        threading.Thread(target=self._run, daemon=True).start()
 
-    def _run(self, profile_ids):
+    def _run(self):
         store = Store(self.db_path)
         try:
             client = service.make_client(self.platform)
             self._set(message="Şampiyon listesi indiriliyor")
             service.ensure_champions(store, force=True)
-            profiles = [store.profile(i) for i in profile_ids] if profile_ids else store.profiles()
-            accounts = [(p["name"], a) for p in profiles for a in store.accounts(p["id"])]
-            self._set(count=len(accounts))
-            for i, (name, acc) in enumerate(accounts, 1):
-                self._set(index=i, account=f"{name} · {acc['riot_id']}", done=0, total=0,
-                          message="Maç listesi alınıyor")
+            while True:
+                with self.lock:
+                    if not self.state["waiting"]:
+                        break
+                    pid = self.state["waiting"][0]
                 try:
-                    service.update_account(
-                        client, store, acc,
-                        progress=lambda d, t: self._set(done=d, total=t, message="Maçlar indiriliyor"))
-                except RiotAuthError:
-                    raise
-                except (RiotError, OSError) as e:
-                    self._error(f"{acc['riot_id']}: {service.describe_error(e)}")
+                    profile = store.profile(pid)
+                except KeyError:  # bu arada silinmiş
+                    profile = None
+                for acc in store.accounts(pid) if profile else []:
+                    self._set(profile_id=pid, account=f"{profile['name']} · {acc['riot_id']}",
+                              done=0, total=0, message="Maç listesi alınıyor")
+                    try:
+                        service.update_account(
+                            client, store, acc,
+                            progress=lambda d, t: self._set(done=d, total=t, message="Maçlar indiriliyor"))
+                    except RiotAuthError:
+                        raise
+                    except (RiotError, OSError) as e:
+                        self._error(f"{acc['riot_id']}: {service.describe_error(e)}")
+                with self.lock:
+                    self.state["waiting"].pop(0)
+                    self.state["completed"] += 1
             self._set(message="Tamamlandı")
         except Exception as e:  # iş parçacığı sessizce ölmesin, arayüzde görünsün
             self._set(message="Hata")
             self._error(service.describe_error(e))
         finally:
             store.close()
-            self._set(running=False, finished_at=time.time())
+            self._set(running=False, profile_id=None, waiting=[], finished_at=time.time())
+
+
+def queue_update(h, profile_id):
+    """Hesap eklendikten sonra o profilin verisini otomatik çekmeye başlar."""
+    if service.load_api_key():
+        h.server.job.start([profile_id])
+    return h.server.job.snapshot()
 
 
 # --- JSON dönüştürücüler ---
@@ -156,7 +185,8 @@ def api_create_profile(h, store):
     data = h.body()
     profile_id, riot_id = service.create_profile(
         store, lambda: service.make_client(h.server.platform), data.get("name"), data.get("riot_id"))
-    return {"id": profile_id, "riot_id": riot_id}
+    job = queue_update(h, profile_id) if riot_id else h.server.job.snapshot()
+    return {"id": profile_id, "riot_id": riot_id, "job": job}
 
 
 def api_update_profile(h, store, pid):
@@ -182,7 +212,7 @@ def api_add_account(h, store, pid):
     profile = store.profile(int(pid))
     riot_id = service.add_account(store, service.make_client(h.server.platform), profile["id"],
                                   h.body().get("riot_id") or "")
-    return {"riot_id": riot_id}
+    return {"riot_id": riot_id, "job": queue_update(h, profile["id"])}
 
 
 def api_delete_account(h, store, puuid):
@@ -211,11 +241,11 @@ def api_add_friend(h, store):
     profile_id, riot_id = service.link_suggested_account(
         store, data.get("puuid") or "", profile_name=data.get("name"),
         profile_id=data.get("profile_id") or None)
-    return {"profile_id": profile_id, "riot_id": riot_id}
+    return {"profile_id": profile_id, "riot_id": riot_id, "job": queue_update(h, profile_id)}
 
 
 def api_start_update(h, store):
-    ids = [int(i) for i in h.body().get("profile_ids") or []]
+    ids = [int(i) for i in h.body().get("profile_ids") or []] or [p["id"] for p in store.profiles()]
     if not service.load_api_key():
         raise ValueError("Önce Riot API anahtarını kaydet.")
     h.server.job.start(ids)
