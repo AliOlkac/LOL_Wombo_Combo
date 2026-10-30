@@ -114,7 +114,8 @@ def profile_json(store, profile, index, full=False):
 
 def key_status():
     key = service.load_api_key()
-    status = {"has_key": bool(key), "hint": f"…{key[-4:]}" if key else None, "age_hours": None}
+    status = {"has_key": bool(key), "hint": f"…{key[-4:]}" if key else None,
+              "masked": service.mask_key(key) if key else None, "age_hours": None}
     if key and os.path.exists(service.KEY_FILE):
         status["age_hours"] = round((time.time() - os.path.getmtime(service.KEY_FILE)) / 3600, 1)
     return status
@@ -247,6 +248,11 @@ def api_test_key(h, store):
         return {"key_ok": False, "key_message": service.describe_error(e)}
 
 
+def api_diagnose(h, store):
+    riot_id = (h.body().get("riot_id") or "").strip() or None
+    return {"text": service.diagnose(store, riot_id, h.server.platform)}
+
+
 def api_champions(h, store):
     service.ensure_champions(store)
     return sorted((name for _, name in store.champion_index().values()), key=str.lower)
@@ -269,6 +275,7 @@ ROUTES = [
     ("POST", r"/api/brief", api_brief),
     ("POST", r"/api/key", api_save_key),
     ("POST", r"/api/key/test", api_test_key),
+    ("POST", r"/api/diagnose", api_diagnose),
 ]
 
 

@@ -130,6 +130,10 @@ def cmd_key(args, store):
     print("Anahtar çalışıyor, Riot'a bağlantı başarılı.")
 
 
+def cmd_diagnose(args, store):
+    print(service.diagnose(store, args.riot_id, args.sunucu))
+
+
 def cmd_ui(args, store):
     from .web import serve
     store.close()
@@ -150,6 +154,10 @@ def main(argv=None):
     p = sub.add_parser("anahtar", help="Riot API anahtarını kaydet")
     p.add_argument("anahtar", help="RGAPI-...")
     p.set_defaults(func=cmd_key)
+
+    p = sub.add_parser("teshis", help="Anahtar/bağlantı sorunları için rapor (tam anahtarı göstermez)")
+    p.add_argument("riot_id", nargs="?", help="Test için bir Riot ID, ör. Oqila#4310")
+    p.set_defaults(func=cmd_diagnose)
 
     p = sub.add_parser("ekle", help="Profile Riot hesabı ekle (profil yoksa oluşturulur)")
     p.add_argument("profil", help="Arkadaşın adı, ör. Ali")

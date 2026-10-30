@@ -161,6 +161,9 @@ td .ic { width: 28px; height: 28px; border-radius: 6px; }
   width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); background: var(--panel);
   border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: none; flex-direction: column; gap: 12px; }
 .modal.show { display: flex; }
+.modal { overflow-y: auto; }
+details summary { cursor: pointer; color: var(--gold); }
+details[open] summary { margin-bottom: 4px; }
 .modal h2 { margin: 0; font-size: 17px; }
 .modal textarea { width: 100%; min-height: 50vh; resize: vertical; font: 12px/1.5 ui-monospace, Consolas, monospace; }
 .modal .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
@@ -248,6 +251,17 @@ td .ic { width: 28px; height: 28px; border-radius: 6px; }
     <p class="form-error" role="alert"></p>
   </form>
   <p class="key-result" id="keyResult" role="status"></p>
+  <details id="diag">
+    <summary class="small">Anahtar kabul edilmiyor mu? Ayrıntılı teşhis</summary>
+    <p class="small muted" style="margin:8px 0">Riot'a birkaç deneme isteği gönderip cevaplarını gösterir. Rapor tam anahtarı içermez,
+      kopyalayıp Claude'a gönderebilirsin. Maskeli anahtarı portaldaki anahtarla karşılaştır: aynı değilse eski anahtar kayıtlı demektir.</p>
+    <form id="diagForm" class="inline">
+      <input name="riot_id" placeholder="Test için Riot ID (ör. Oqila#4310)" maxlength="40">
+      <button>Teşhis çalıştır</button>
+    </form>
+    <textarea id="diagText" readonly style="display:none;min-height:180px;margin-top:8px"></textarea>
+    <div class="actions" id="diagActions" style="display:none;margin-top:8px"><button id="copyDiag">Raporu kopyala</button></div>
+  </details>
   <div class="actions">
     <button id="testKey">Kayıtlı anahtarı test et</button>
     <button id="closeKey">Kapat</button>
@@ -668,6 +682,13 @@ document.addEventListener("submit", e => {
       toast(r.riot_id ? `${r.riot_id} eklendi. Şimdi "Herkesi güncelle"ye bas.` : "Profil eklendi.");
       await load();
     });
+  } else if (f.id === "diagForm") {
+    submitForm(f, async () => {
+      const r = await api("POST", "/api/diagnose", data);
+      $("#diagText").style.display = "block";
+      $("#diagActions").style.display = "flex";
+      $("#diagText").value = r.text;
+    }, "Çalışıyor…");
   } else if (f.id === "keyForm") {
     submitForm(f, async () => {
       const r = await api("POST", "/api/key", data);
@@ -698,7 +719,7 @@ $("#clearTeam").addEventListener("click", () => { selected = []; saveSelection()
 function fillKeyInfo() {
   const k = state.key;
   $("#keyInfo").textContent = k.has_key
-    ? `Kayıtlı anahtar: ${k.hint}` + (k.age_hours !== null ? ` · ${k.age_hours} saat önce kaydedildi` : " (ortam değişkeninden)")
+    ? `Kayıtlı anahtar: ${k.masked}` + (k.age_hours !== null ? ` · ${k.age_hours} saat önce kaydedildi` : " (ortam değişkeninden)")
     : "Kayıtlı anahtar yok.";
   $("#testKey").disabled = !k.has_key;
 }
@@ -713,6 +734,11 @@ function showKeyResult(r) {
 
 function openKeyModal() {
   fillKeyInfo();
+  const diagInput = $("#diagForm [name=riot_id]");
+  if (!diagInput.value) {
+    const acc = state.profiles.flatMap(p => p.accounts)[0];
+    diagInput.value = acc ? acc.riot_id : $("#newProfile [name=riot_id]").value;
+  }
   $("#keyResult").textContent = "";
   $("#keyModal").classList.add("show");
   $("#overlay").classList.add("show");
@@ -731,6 +757,12 @@ $("#testKey").addEventListener("click", async () => {
   finally { btn.disabled = false; }
 });
 $("#closeKey").addEventListener("click", () => $("#overlay").click());
+$("#copyDiag").addEventListener("click", async () => {
+  const ta = $("#diagText");
+  try { await navigator.clipboard.writeText(ta.value); }
+  catch (e) { ta.select(); document.execCommand("copy"); }
+  toast("Rapor kopyalandı.");
+});
 $("#makeBrief").addEventListener("click", () => run(async () => {
   const { text } = await api("POST", "/api/brief", { profile_ids: selected });
   $("#briefText").value = text;

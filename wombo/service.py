@@ -1,11 +1,18 @@
 """CLI ve web arayüzünün ortak işlemleri: anahtar, hesap ekleme, veri çekme, havuz."""
 import os
+import platform as _platform
+import re
 import socket
 import ssl
+import sys
 import time
+import urllib.parse
+import urllib.request
+from urllib.error import HTTPError
 
 from .pool import build_pool
-from .riot import RateLimiter, RiotClient, RiotError, fetch_champions, platform_of
+from .riot import (PLATFORM_TO_REGION, USER_AGENT, RateLimiter, RiotClient, RiotError,
+                   fetch_champions, platform_of)
 from .store import split_roles
 
 DATA_DIR = "data"
@@ -16,25 +23,51 @@ KEY_FILE = os.path.join(DATA_DIR, "riot_key.txt")
 _shared_limiter = RateLimiter()
 
 
-def load_api_key(key_file=KEY_FILE):
-    """Önce arayüzden kaydedilen anahtar, yoksa RIOT_API_KEY ortam değişkeni."""
+KEY_RE = re.compile(r"RGAPI-[A-Za-z0-9-]+")
+KEY_LENGTH = 42  # "RGAPI-" + 36 karakterlik UUID
+
+
+def clean_key(text):
+    """Yapıştırılan metinden anahtarı ayıklar: tırnak, boşluk, 'apikey:' öneki, görünmez
+    karakterler ve BOM temizlenir. Anahtar bulunamazsa None."""
+    text = re.sub(r"[\s\u200b-\u200f\u2060\ufeff]", "", text or "")
+    match = KEY_RE.search(text)
+    return match.group(0) if match else None
+
+
+def key_source(key_file=KEY_FILE):
+    """(anahtar, kaynak) — önce arayüzden kaydedilen dosya, yoksa RIOT_API_KEY."""
     try:
-        with open(key_file, encoding="utf-8") as f:
-            key = f.read().strip()
+        with open(key_file, encoding="utf-8-sig") as f:
+            key = clean_key(f.read())
         if key:
-            return key
+            return key, key_file
     except FileNotFoundError:
         pass
-    return (os.environ.get("RIOT_API_KEY") or "").strip() or None
+    key = clean_key(os.environ.get("RIOT_API_KEY"))
+    return (key, "RIOT_API_KEY ortam değişkeni") if key else (None, None)
 
 
-def save_api_key(key, key_file=KEY_FILE):
-    key = key.strip()
-    if not key.startswith("RGAPI-"):
-        raise ValueError("Riot API anahtarı 'RGAPI-' ile başlar.")
+def load_api_key(key_file=KEY_FILE):
+    return key_source(key_file)[0]
+
+
+def save_api_key(text, key_file=KEY_FILE):
+    key = clean_key(text)
+    if key is None:
+        raise ValueError("Bu bir Riot anahtarına benzemiyor. Portaldaki "
+                         "'RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' anahtarının tamamını kopyala.")
+    if len(key) != KEY_LENGTH:
+        raise ValueError(f"Anahtar eksik görünüyor ({len(key)} karakter, {KEY_LENGTH} olmalı). "
+                         "Portaldaki anahtarın tamamını kopyala.")
     os.makedirs(os.path.dirname(os.path.abspath(key_file)), exist_ok=True)
     with open(key_file, "w", encoding="utf-8") as f:
         f.write(key)
+    return key
+
+
+def mask_key(key):
+    return f"{key[:10]}…{key[-4:]}" if key else "-"
 
 
 def make_client(platform="tr1"):
@@ -112,6 +145,90 @@ def create_profile(store, client_factory, name, riot_id=None):
 def check_key(client):
     """Anahtarı ve bağlantıyı Riot'un durum ucu ile dener. Başarısızsa hata fırlatır."""
     client.platform_status()
+
+
+def _probe(url, key=None):
+    """Tek bir ham istek: (HTTP kodu ya da None, açıklama). Hata fırlatmaz."""
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    if key:
+        headers["X-Riot-Token"] = key
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=20) as r:
+            limits = r.headers.get("X-App-Rate-Limit")
+            return r.status, "OK" + (f" (uygulama limiti: {limits})" if limits else "")
+    except HTTPError as e:
+        body = " ".join(e.read(300).decode("utf-8", "replace").split())
+        return e.code, body or e.reason
+    except Exception as e:
+        return None, describe_error(e)
+
+
+def diagnose(store, riot_id=None, platform="tr1"):
+    """Anahtar ve bağlantı sorunlarını bulmak için paylaşılabilir bir rapor (tam anahtarı içermez)."""
+    key, source = key_source()
+    env_key = clean_key(os.environ.get("RIOT_API_KEY"))
+    lines = [
+        f"Wombo teşhis · {time.strftime('%Y-%m-%d %H:%M')}",
+        f"Python {sys.version.split()[0]} · {_platform.platform()} · {ssl.OPENSSL_VERSION}",
+        f"Sunucu: {platform} (bölge: {PLATFORM_TO_REGION.get(platform, '?')})",
+    ]
+    if key is None:
+        lines.append("Anahtar: YOK (ne data/riot_key.txt ne RIOT_API_KEY)")
+    else:
+        age = ""
+        if source == KEY_FILE and os.path.exists(KEY_FILE):
+            age = f", {round((time.time() - os.path.getmtime(KEY_FILE)) / 60)} dk önce kaydedildi"
+        fmt = "biçim doğru" if len(key) == KEY_LENGTH else f"UYARI: {len(key)} karakter, {KEY_LENGTH} olmalı"
+        lines.append(f"Anahtar: {mask_key(key)} · {fmt} · kaynak: {source}{age}")
+        if env_key and env_key != key:
+            lines.append(f"Not: RIOT_API_KEY ({mask_key(env_key)}) da tanımlı ama kullanılmıyor")
+
+    base = f"https://{platform}.api.riotgames.com/lol/status/v4/platform-data"
+    no_key = _probe(base)
+    lines.append(f"1) Bağlantı (anahtarsız, 401 beklenir): {no_key[0] or '-'} {no_key[1]}")
+    results = [no_key]
+    if key:
+        status = _probe(base, key)
+        lines.append(f"2) Anahtarla durum ucu (lol-status-v4): {status[0] or '-'} {status[1]}")
+        results.append(status)
+        if riot_id is None:
+            first = store.accounts()
+            riot_id = first[0]["riot_id"] if first else None
+        if riot_id and "#" in riot_id:
+            name, tag = riot_id.rsplit("#", 1)
+            url = "https://{}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{}/{}".format(
+                PLATFORM_TO_REGION.get(platform, "europe"), urllib.parse.quote(name.strip()),
+                urllib.parse.quote(tag.strip()))
+            account = _probe(url, key)
+            lines.append(f"3) Hesap sorgusu (account-v1) {riot_id}: {account[0] or '-'} {account[1]}")
+            results.append(account)
+        else:
+            lines.append("3) Hesap sorgusu: atlandı (test için bir Riot ID gir)")
+
+    lines.append("Yorum: " + _interpret(key, results))
+    return "\n".join(lines)
+
+
+def _interpret(key, results):
+    connect = results[0][0]
+    if connect is None:
+        return "Riot sunucusuna hiç ulaşılamıyor; sorun anahtarda değil, ağda (1. satırdaki hataya bak)."
+    if key is None:
+        return "Bağlantı var ama kayıtlı anahtar yok. Anahtarı kaydet."
+    codes = [code for code, _ in results[1:]]
+    if all(c == 200 for c in codes):
+        return "Anahtar çalışıyor."
+    if 401 in codes:
+        return "Riot anahtarı tanımıyor: eksik/yanlış kopyalanmış. Portaldan anahtarın tamamını tekrar kopyala."
+    if codes and codes[0] == 403:
+        return ("Riot anahtarı reddediyor (403). Anahtar süresi dolmuş ya da eski anahtar kayıtlı olabilir: "
+                "portalda Regenerate'e bas, sayfayı yenile, çıkan YENİ anahtarı kaydet ve maskeli halini "
+                "(baştaki ve sondaki karakterler) portaldakiyle karşılaştır.")
+    if len(codes) > 1 and codes[0] == 200 and codes[1] == 403:
+        return "Anahtar geçerli ama hesap ucu yasak (403). Bu raporu Claude'a gönder."
+    if len(codes) > 1 and codes[0] == 200 and codes[1] == 404:
+        return "Anahtar çalışıyor; bu Riot ID bulunamadı. İsmi ve etiketi oyundaki gibi yaz."
+    return "Beklenmeyen sonuç; bu raporu Claude'a gönder."
 
 
 def describe_error(e):

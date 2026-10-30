@@ -10,7 +10,7 @@ from urllib.error import HTTPError
 from wombo import service
 from wombo.pool import MAIN, PLAYABLE, STRETCH, ChampStat, build_pool, comfort_score, parse_roles
 from wombo.prompt import build_prompt
-from wombo.riot import RateLimiter, RiotAuthError, RiotError
+from wombo.riot import RateLimiter, RiotAuthError, RiotClient, RiotError
 from wombo.store import Store
 
 NOW = 1_800_000_000_000
@@ -266,6 +266,59 @@ class CreateProfileTest(unittest.TestCase):
         self.assertIn("SSL sertifika", service.describe_error(ssl_err))
         self.assertIn("internet", service.describe_error(URLError(socket.gaierror(11001, "getaddrinfo failed"))))
         self.assertIn("süresi dolmuş", service.describe_error(RiotAuthError("API anahtarı geçersiz ya da süresi dolmuş")))
+
+
+FAKE_KEY = "RGAPI-00000000-1111-2222-3333-444444444444"
+
+
+class KeyHandlingTest(unittest.TestCase):
+    def test_clean_key_strips_noise(self):
+        for raw in [FAKE_KEY, f"  {FAKE_KEY}\n", f'apikey:"{FAKE_KEY}"', f"﻿{FAKE_KEY}",
+                    FAKE_KEY[:20] + "​" + FAKE_KEY[20:]]:
+            self.assertEqual(service.clean_key(raw), FAKE_KEY)
+        self.assertIsNone(service.clean_key("merhaba"))
+
+    def test_save_and_load(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "data", "riot_key.txt")
+            with self.assertRaisesRegex(ValueError, "eksik"):
+                service.save_api_key("RGAPI-1234", path)
+            service.save_api_key(f"apikey: {FAKE_KEY}", path)
+            self.assertEqual(service.key_source(path), (FAKE_KEY, path))
+
+    def test_client_sends_user_agent_and_reports_riot_message(self):
+        import io
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured.update(req.header_items())
+            raise HTTPError(req.full_url, 403, "Forbidden", {},
+                            io.BytesIO(b'{"status":{"message":"Forbidden","status_code":403}}'))
+
+        client = RiotClient(api_key=FAKE_KEY, limiter=RateLimiter(limits=((1000, 1.0),)))
+        with mock.patch("urllib.request.urlopen", fake_urlopen):
+            with self.assertRaisesRegex(RiotAuthError, "HTTP 403: Forbidden"):
+                client.platform_status()
+        self.assertEqual(captured["X-riot-token"], FAKE_KEY)
+        self.assertIn("LOL-Wombo-Combo", captured["User-agent"])
+
+    def diagnose(self, responses):
+        store = Store(":memory:")
+        self.addCleanup(store.close)
+        answers = iter(responses)
+        with mock.patch.object(service, "_probe", lambda url, key=None: next(answers)), \
+                mock.patch.object(service, "key_source", lambda key_file=None: (FAKE_KEY, "test")):
+            return service.diagnose(store, "Oqila#4310")
+
+    def test_diagnose_interpretations(self):
+        text = self.diagnose([(401, "Unauthorized"), (403, "Forbidden"), (403, "Forbidden")])
+        self.assertIn("reddediyor (403)", text)
+        self.assertNotIn(FAKE_KEY, text)  # rapor paylaşılabilir: tam anahtar yok
+        self.assertIn("RGAPI-0000…4444", text)
+        self.assertIn("Anahtar çalışıyor.", self.diagnose([(401, ""), (200, "OK"), (200, "OK")]))
+        self.assertIn("tanımıyor", self.diagnose([(401, ""), (401, "Unknown apikey"), (401, "")]))
+        self.assertIn("ağda", self.diagnose([(None, "Ağ hatası"), (None, ""), (None, "")]))
+        self.assertIn("bulunamadı", self.diagnose([(401, ""), (200, "OK"), (404, "")]))
 
 
 class RateLimiterTest(unittest.TestCase):

@@ -18,6 +18,21 @@ PLATFORM_TO_REGION = {
 
 DDRAGON = "https://ddragon.leagueoflegends.com"
 
+# Bazı ağ geçitleri Python'un varsayılan "Python-urllib" kimliğini engeller; kendimizi tanıtalım
+USER_AGENT = "LOL-Wombo-Combo/1.0 (personal tool; Python urllib)"
+
+
+def riot_message(http_error):
+    """Riot hata cevabındaki status.message alanı (yoksa gövdenin başı)."""
+    try:
+        raw = http_error.read(500).decode("utf-8", "replace")
+    except Exception:
+        return ""
+    try:
+        return json.loads(raw).get("status", {}).get("message", "") or raw[:120]
+    except (ValueError, AttributeError):
+        return " ".join(raw.split())[:120]
+
 
 class RiotError(Exception):
     pass
@@ -78,23 +93,31 @@ class RiotClient:
             url += "?" + urllib.parse.urlencode(params)
         for attempt in range(6):
             self.limiter.wait()
-            req = urllib.request.Request(url, headers={"X-Riot-Token": self.api_key})
+            req = urllib.request.Request(url, headers={"X-Riot-Token": self.api_key,
+                                                       "User-Agent": USER_AGENT,
+                                                       "Accept": "application/json"})
             try:
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     return json.load(resp)
             except HTTPError as e:
                 if e.code == 404:
                     return None
-                if e.code in (401, 403):
+                if e.code == 401:
                     raise RiotAuthError(
-                        "API anahtarı geçersiz ya da süresi dolmuş "
-                        "(geliştirici anahtarları 24 saatte bir yenilenmeli)."
+                        f"Riot anahtarı tanımadı (HTTP 401: {riot_message(e) or 'Unauthorized'}). "
+                        "Anahtar eksik ya da hatalı kopyalanmış olabilir; portaldaki anahtarın tamamını kopyala."
+                    ) from e
+                if e.code == 403:
+                    raise RiotAuthError(
+                        f"Riot anahtarı reddetti (HTTP 403: {riot_message(e) or 'Forbidden'}). "
+                        "Geliştirici anahtarının süresi 24 saatte dolar: portalda Regenerate'e bas ve "
+                        "sayfadaki YENİ anahtarı kaydet."
                     ) from e
                 if e.code == 429 or e.code >= 500:
                     retry_after = e.headers.get("Retry-After")
                     time.sleep(float(retry_after) if retry_after else 2 ** attempt)
                     continue
-                raise RiotError(f"HTTP {e.code}: {url}") from e
+                raise RiotError(f"Riot hatası HTTP {e.code} ({riot_message(e)}): {url}") from e
             except (TimeoutError, ConnectionError):
                 if attempt >= 2:
                     raise
