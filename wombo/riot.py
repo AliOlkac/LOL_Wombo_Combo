@@ -152,6 +152,15 @@ def platform_of(match_id):
     return prefix if prefix in PLATFORM_TO_REGION else None
 
 
+def fetch_champion_kit(version, ddid):
+    """Tek şampiyonun etiketleri ve ultisi (Data Dragon): {"tags", "ult_name", "ult_desc"}."""
+    url = f"{DDRAGON}/cdn/{version}/data/en_US/champion/{urllib.parse.quote(ddid)}.json"
+    with urllib.request.urlopen(url, timeout=20) as resp:
+        data = next(iter(json.load(resp)["data"].values()))
+    ult = data["spells"][3]
+    return {"tags": data.get("tags", []), "ult_name": ult["name"], "ult_desc": ult["description"]}
+
+
 def fetch_champions():
     """Data Dragon'dan güncel sürüm ve şampiyon listesi: (sürüm, [(sayısal_id, ddragon_id, ad)])."""
     with urllib.request.urlopen(f"{DDRAGON}/api/versions.json", timeout=30) as resp:

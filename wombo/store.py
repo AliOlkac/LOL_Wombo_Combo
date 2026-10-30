@@ -65,6 +65,13 @@ CREATE TABLE IF NOT EXISTS champions (
     ddid TEXT NOT NULL,
     name TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS champion_kits (
+    ddid TEXT PRIMARY KEY,
+    version TEXT NOT NULL,          -- hangi yamadan alındı; yama değişince yenilenir
+    tags TEXT,                      -- JSON liste: ["Mage", "Support"]
+    ult_name TEXT,
+    ult_desc TEXT
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -306,6 +313,24 @@ class Store:
         row = self.db.execute("SELECT ddid FROM champions WHERE numeric_id = ?",
                               (numeric_id,)).fetchone()
         return row[0] if row else str(numeric_id)
+
+    def kits(self, ddids):
+        """ddragon_id -> {version, tags, ult_name, ult_desc} (önbellekte olanlar)."""
+        if not ddids:
+            return {}
+        ph = ",".join("?" * len(ddids))
+        rows = self.db.execute(f"SELECT * FROM champion_kits WHERE ddid IN ({ph})", list(ddids))
+        return {r["ddid"]: {"version": r["version"], "tags": json.loads(r["tags"] or "[]"),
+                            "ult_name": r["ult_name"], "ult_desc": r["ult_desc"]} for r in rows}
+
+    def set_kit(self, ddid, version, kit):
+        self.db.execute("INSERT OR REPLACE INTO champion_kits VALUES (?, ?, ?, ?, ?)",
+                        (ddid, version, json.dumps(kit.get("tags", [])), kit.get("ult_name"),
+                         kit.get("ult_desc")))
+        self.db.commit()
+
+    def all_champion_ids(self):
+        return [r[0] for r in self.db.execute("SELECT ddid FROM champions ORDER BY ddid")]
 
     def champion_index(self):
         """normalize edilmiş ad -> (ddragon_id, görünen ad)."""

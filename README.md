@@ -44,6 +44,19 @@ Brief'te her oyuncu için şunlar yer alır:
 - Oyun tarzı özeti: hasar payı, alınan hasar payı, CC süresi, kill katılımı, solo kill, CS/dk, görüş/dk
 - ARAM'da sık oynadığı şampiyonlar (havuza sayılmaz, deneysel fikirler için)
 - Seçili oyuncuların birlikte oynadığı maçlardan kanıtlanmış ikililer (ör. "Ali Miss Fortune (Support) + Lao Jhin (ADC): 14 maç, %71")
+- Rol matrisi: her oyuncunun her rolde kaç maç oynadığı ve o rolde en çok hangi şampiyonları oynadığı
+- Havuzdaki şampiyonların ulti özetleri ve güncel yama (Data Dragon'dan). Böylece Claude'un bilmediği yeni ya da rework almış şampiyonlar da doğru değerlendirilir. Bu özetler yama başına bir kez, güncelleme sırasında indirilir.
+
+Brief önce veriyi, en sonda kuralları ve çıktı formatını verir. Kurallar şunları içerir:
+- Mekanik doğrulama: ör. Yasuo R için havaya kaldırma şart; kanallı ultiler korunmalı
+- Az maçlı winrate'e güvenmeme
+- Comp çeşitliliği ve tek bir main'e bağımlılığın sorgulanması
+
+İstenen çıktı:
+- En üstte özet tablo
+- Her comp için veriden kanıt, sesli iletişim komutu ve ilk 15 dakika planı
+- Draft planı ve "bu akşamın önerisi"
+- Antrenman listesi ve belirsizlikler
 
 Anahtar `data/riot_key.txt` dosyasında, veriler `data/wombo.db` dosyasında durur. `data/` klasörü git'e girmez.
 

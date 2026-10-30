@@ -98,6 +98,10 @@ class UpdateJob:
                 with self.lock:
                     self.state["waiting"].pop(0)
                     self.state["completed"] += 1
+            # Brief'teki ulti özetleri için; yama başına bir kez, sonrakiler anında geçer
+            self._set(message="Şampiyon ulti özetleri indiriliyor (yama başına bir kez)", account="",
+                      profile_id=None, done=0, total=0)
+            service.ensure_kits(store, store.all_champion_ids())
             self._set(message="Tamamlandı")
         except Exception as e:  # iş parçacığı sessizce ölmesin, arayüzde görünsün
             self._set(message="Hata")

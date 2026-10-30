@@ -14,6 +14,15 @@ from wombo.riot import RateLimiter, RiotAuthError, RiotClient, RiotError
 from wombo.store import Store
 from wombo.synergy import duo_stats, shared_matches
 
+def setUpModule():
+    # Birim testleri ağa çıkmasın: Data Dragon'dan ulti özeti çekmek varsayılan olarak "ağ yok" gibi davranır
+    def offline(version, ddid):
+        raise OSError("testlerde ağ yok")
+    patcher = mock.patch.object(service, "fetch_champion_kit", offline)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 NOW = 1_800_000_000_000
 DAY = 86_400_000
 
@@ -464,6 +473,65 @@ class BriefModeTest(unittest.TestCase):
         self.assertIn("| Hasar% | CC sn |", text)
         self.assertIn("Oyun tarzı (SR maç başı ortalama): takım hasarının %31'i · 12 sn CC · KP %50", text)
         self.assertIn("ARAM'da oynadıkları (havuza sayılmaz, deneysel fikir için): Seraphine 3", text)
+
+
+class StrongerPromptTest(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+        self.addCleanup(self.store.close)
+        self.ids = seed_team(self.store)  # yama 15.1.1; Ahri, Malphite, Wukong
+        self.store.update_profile(self.ids[0], preferred_roles="TOP", avoided_roles="UTILITY")
+
+    def brief(self, mode="karma"):
+        return service.team_brief(self.store, [self.store.profile(i) for i in self.ids], mode)
+
+    def test_structure_data_first_rules_last(self):
+        text = self.brief()
+        order = [text.index(h) for h in ("# Wombo combo koçluk isteği", "## Oyuncular", "## Rol matrisi",
+                                         "## Birlikte oynadığınız maçlar", "# Kurallar", "# İstenen çıktı")]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("yama 15.1.1", text)
+        self.assertIn("**Esnek** = en az 8 Main/Oynayabilir şampiyonu olan oyuncu", text)
+        exp = text.index("## Deneysel comp ne demek")
+        self.assertTrue(text.index("# Kurallar") < exp < text.index("# İstenen çıktı"))
+        for must in ("Yasuo R yalnızca havaya kalkmış", "5 maçtan az winrate'i kanıt sayma",
+                     "en az bir comp'u o şampiyon olmadan kur", "**Bu akşamın önerisi:**", "sesli komut",
+                     "**Belirsizlikler:**"):
+            self.assertIn(must, text)
+
+    def test_role_matrix(self):
+        text = self.brief()
+        self.assertIn("| Oyuncu | Top | Jungle | Mid | ADC | Support |", text)
+        # Oyuncu0: Ahri mid 10 maç + smurf'te Malphite top 6 maç; top tercih, support oynamaz
+        self.assertIn("| Oyuncu0 | ✓ 6 · Malphite | - | 10 · Ahri | - | ✕ - |", text)
+
+    def test_kits_cached_per_patch_and_listed(self):
+        calls = []
+
+        def fake_fetch(version, ddid):
+            calls.append((version, ddid))
+            return {"tags": ["Tank"], "ult_name": "Unstoppable Force",
+                    "ult_desc": "Malphite <status>knocks up</status> enemies.<br><br>" + "x " * 200}
+
+        with mock.patch.object(service, "fetch_champion_kit", fake_fetch):
+            text = self.brief()
+            self.assertEqual(sorted(d for _, d in calls), ["Ahri", "Malphite"])  # yalnızca havuzdakiler
+            self.brief()
+            self.assertEqual(len(calls), 2)  # önbellekten
+            self.store.set_champions("15.2.1", [(62, "MonkeyKing", "Wukong"), (103, "Ahri", "Ahri"),
+                                                (54, "Malphite", "Malphite")])
+            self.brief()
+            self.assertEqual(len(calls), 4)  # yeni yama: yenilendi
+        self.assertIn("## Şampiyon ulti özetleri (Data Dragon, yama 15.1.1)", text)
+        line = next(l for l in text.splitlines() if l.startswith("- **Malphite**"))
+        self.assertTrue(line.startswith("- **Malphite** [Tank] — R Unstoppable Force: Malphite knocks up enemies. x"))
+        self.assertTrue(line.endswith("…"))
+        self.assertNotIn("<status>", text)
+        from wombo.prompt import clean_kit_text
+        self.assertEqual(clean_kit_text("Bir <b>hedef</b>.<br>İkinci <i>cümle</i>."), "Bir hedef. İkinci cümle.")
+
+    def test_brief_without_network_has_no_kit_section(self):
+        self.assertNotIn("## Şampiyon ulti özetleri", self.brief())
 
 
 class RateLimiterTest(unittest.TestCase):

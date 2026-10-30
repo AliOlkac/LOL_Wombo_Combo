@@ -11,10 +11,10 @@ import urllib.request
 from urllib.error import HTTPError
 
 from .pool import SR_QUEUES, build_pool
-from .prompt import build_prompt
+from .prompt import MAX_CHAMPS, build_prompt
 from .riot import (PLATFORM_TO_REGION, USER_AGENT, RateLimiter, RiotClient, RiotError,
-                   fetch_champions, platform_of)
-from .store import split_roles
+                   fetch_champion_kit, fetch_champions, platform_of)
+from .store import _norm, split_roles
 from .synergy import shared_matches
 
 DATA_DIR = "data"
@@ -351,12 +351,36 @@ def update_account(client, store, account, max_matches=100, progress=None):
     return len(new_ids)
 
 
+def ensure_kits(store, ddids, limit=None):
+    """Şampiyonların ulti özetlerini güncel yama için önbelleğe alır, önbellektekileri döner.
+
+    Ağ yoksa ya da Data Dragon cevap vermezse sessizce eldekilerle devam eder: brief kitsiz de çalışır.
+    """
+    version = store.ddragon_version()
+    have = store.kits(ddids)
+    if version:
+        missing = [d for d in ddids if have.get(d, {}).get("version") != version]
+        for ddid in missing[:limit]:
+            try:
+                store.set_kit(ddid, version, fetch_champion_kit(version, ddid))
+            except OSError:
+                break  # ağ yok: kalanları denemeye gerek yok
+            except (ValueError, KeyError, IndexError, StopIteration):
+                continue  # bu şampiyonun verisi beklenmedik biçimde
+        have = store.kits(ddids)
+    return have
+
+
 def team_brief(store, profiles, mode="karma"):
-    """5 profil için Claude brief'i: havuzlar + birlikte oynanan maçlardan ikililer."""
+    """5 profil için Claude brief'i: havuzlar, rol matrisi, ortak maçlar, ulti özetleri."""
     pools = [load_pool(store, p) for p in profiles]
     shared = shared_matches(store.shared_rows([p["id"] for p in profiles]))
+    index = store.champion_index()
+    ddids = sorted({index[_norm(c.champion)][0] for pool in pools for c in pool.champions[:MAX_CHAMPS]
+                    if _norm(c.champion) in index})
+    kits = ensure_kits(store, ddids, limit=60)  # çoğu güncelleme sırasında önceden indirilir
     return build_prompt(pools, store.champion_names(), shared, {p["id"]: p["name"] for p in profiles},
-                        mode=mode)
+                        mode=mode, kits=kits, patch=store.ddragon_version())
 
 
 def load_pool(store, profile):

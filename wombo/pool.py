@@ -149,6 +149,8 @@ class PlayerPool:
     note: str = ""
     style: dict = field(default_factory=dict)   # SR maç başı ortalamalar (hasar payı, CC süresi...)
     aram: list = field(default_factory=list)    # [(şampiyon, maç)] — havuza sayılmaz
+    role_counts: dict = field(default_factory=dict)  # rol -> SR maç sayısı
+    role_champs: dict = field(default_factory=dict)  # rol -> [(şampiyon, maç)] en çok oynananlar
 
     @property
     def breadth(self):
@@ -214,6 +216,11 @@ def build_pool(match_rows, mastery_rows, extra_rows, name="", riot_ids=(), prefe
     total = sum(roles.values())
     role_share = {pos: n / total for pos, n in roles.most_common()} if total else {}
     sr_games = sum(1 for m in match_rows if m["queue_id"] in SR_QUEUES)
+    role_champs = {}
+    for role in roles:
+        played = [(s.champion, s.positions[role]) for s in stats.values() if s.positions[role]]
+        role_champs[role] = sorted(played, key=lambda cn: -cn[1])[:3]
     return PlayerPool(name, list(riot_ids), champions, role_share, sr_games,
                       list(preferred_roles), list(avoided_roles), note or "",
-                      style=overall.averages(), aram=aram.most_common())
+                      style=overall.averages(), aram=aram.most_common(),
+                      role_counts=dict(roles), role_champs=role_champs)
