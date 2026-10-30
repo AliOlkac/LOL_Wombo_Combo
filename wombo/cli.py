@@ -133,6 +133,25 @@ def cmd_diagnose(args, store):
     print(service.diagnose(store, args.riot_id, args.sunucu))
 
 
+def cmd_note(args, store):
+    if args.sampiyon is None:
+        notes = store.notes()
+        print("\n".join(f"{c}: {n}" for c, n in notes.items()) or "Henüz not yok.")
+        return
+    service.ensure_champions(store)
+    champion = store.find_champion(args.sampiyon)
+    if champion is None:
+        sys.exit(f"Şampiyon bulunamadı: {args.sampiyon}")
+    if args.sil:
+        store.remove_note(champion)
+        print(f"{champion} notu silindi.")
+    elif args.metin:
+        store.set_note(champion, " ".join(args.metin.split()))
+        print(f"{champion}: {args.metin}")
+    else:
+        print(f"{champion}: {store.notes().get(champion, '(not yok)')}")
+
+
 def cmd_ui(args, store):
     from .web import serve
     store.close()
@@ -188,6 +207,12 @@ def main(argv=None):
     p.add_argument("--oynamaz", help="ör. sup")
     p.add_argument("--not", dest="notu", help="Profil notu, ör. 'tank sever'")
     p.set_defaults(func=cmd_roles)
+
+    p = sub.add_parser("not", help="Şampiyon notları (brief'e girer): listele, yaz, sil")
+    p.add_argument("sampiyon", nargs="?", help="Boş bırakılırsa tüm notlar listelenir")
+    p.add_argument("metin", nargs="?", help="Not metni, ör. 'tek atar, kaosu fırsata çevirir'")
+    p.add_argument("--sil", action="store_true")
+    p.set_defaults(func=cmd_note)
 
     p = sub.add_parser("ekstra", help="Profilin havuzuna elle şampiyon ekle/çıkar")
     p.add_argument("profil")

@@ -6,7 +6,7 @@ okuduktan sonra görür.
 """
 import re
 
-from .pool import FLEX_BREADTH, MAIN, PLAYABLE, POSITION_NAMES, STRETCH
+from .pool import FLEX_BREADTH, MAIN, PLAYABLE, POSITION_NAMES, STRETCH, format_rank
 from .store import POSITIONS, _norm
 from .synergy import duo_stats, pair_totals
 
@@ -91,6 +91,16 @@ def rules_and_format(mode="karma"):
   kimin engage yaptığını bunlardan oku.
 - **Birlikte oynadığınız maçlar** gerçek ortak maçlarımız. Çok maçlı, yüksek winrate'li ikililer
   kanıtlanmış silahlarımızdır: birkaç çekirdeği bunların üstüne kur.
+- **Rank** oyuncunun seviyesini gösterir: mekanik olarak zor şampiyonları ve hassas zamanlama
+  isteyen combo'ları ekibin seviyesine göre ayarla.
+- **Şampiyon notlarımız** grubun kendi gözlemidir; o şampiyonu değerlendirirken öncelik ver.
+
+## Puanlama (her çekirdek için 1-5)
+- **Wombo:** ulti/CC zincirinin gücü, kaç kişiyi yakaladığı, ıskalanınca ne kadar tolere ettiği.
+- **Obje:** ejderha ve Baron'u ne kadar hızlı eritir (sürekli hasar, % can hasarı, obje hasarı/dk
+  verisi) ve obje savaşında alanı ne kadar iyi tutar.
+- **Keyif:** oynaması ne kadar eğlenceli: oyuncuların sevip çok oynadığı şampiyonlar, büyük
+  takım savaşı anları, "highlight" potansiyeli.
 
 ## Mekanik doğruluk
 - Her combo adımı gerçekten çalışmalı. Örnekler: Yasuo R yalnızca havaya kalkmış ya da savrulmuş
@@ -108,15 +118,16 @@ def rules_and_format(mode="karma"):
 # İstenen çıktı
 **Kısa ve öz.** Genel LoL bilgisi anlatma, açıklama paragrafı yazma. Yalnızca şunlar:
 
-1. **Çekirdek tablosu**, en güçlüden başlayarak:
-   | # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Not |
+1. **Çekirdek tablosu**, üç puanın toplamına göre en iyiden başlayarak:
+   | # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Wombo | Obje | Keyif | Not |
    - Tip: Sağlam / Deneysel
    - Çekirdek: "Oyuncu Şampiyon (Rol)" + ... (ör. "civaHg Amumu (Jg) + Ali MF (Sup) + Lao Jhin (ADC)")
    - Sesli komut: ulti sırası tek satır (ör. "Amumu R → Jhin W → MF R")
    - Serbest slotlar: çekirdek dışındaki roller; çekirdeği belirgin güçlendiren biri varsa
      "isteğe bağlı: Oyuncu Şampiyon"
    - Not: en fazla ~10 kelime, veriden kanıt ya da risk (ör. "ikili 14 maç %71", "Brand pas riski")
-2. **Öne çıkanlar** (en fazla 3 madde, tek cümle): bu akşam ilk denenecek çekirdek ve neden.
+2. **Öne çıkanlar** (en fazla 3 madde, tek cümle): en güçlü wombo, en hızlı obje ve en keyifli
+   çekirdek; bu akşam hangisiyle başlanmalı.
 3. **Ortak banlar** (tek satır, en fazla 3 şampiyon): çekirdeklerin çoğunu bozanlar.
 4. **Belirsizlikler**: yalnızca varsa, tek satır.
 
@@ -151,6 +162,8 @@ def style_line(style):
         parts.append(f"KP {_pct(style['kp'])}")
     if "solo_kills" in style:
         parts.append(f"{style['solo_kills']:.1f} solo kill")
+    if "obj_dpm" in style:
+        parts.append(f"{style['obj_dpm']:.0f} obje hasarı/dk")
     if "cs_pm" in style:
         parts.append(f"{style['cs_pm']:.1f} CS/dk")
     if "vision_pm" in style:
@@ -166,6 +179,8 @@ def player_section(pool, names):
         title += " — Esnek"
     share = ", ".join(f"{POSITION_NAMES.get(p, p)} {_pct(s)}" for p, s in pool.role_share.items())
     lines = [title, f"Son {pool.sr_games} Sihirdar Vadisi maçı. Rol dağılımı: {share or 'veri yok'}"]
+    if pool.ranks:
+        lines.append("Rank: " + " · ".join(f"{q} {format_rank(e)}" for q, e in pool.ranks.items()))
     if pool.preferred_roles:
         lines.append(f"Tercih ettiği roller: {_roles(pool.preferred_roles)}")
     if pool.avoided_roles:
@@ -262,6 +277,16 @@ def clean_kit_text(text, limit=KIT_DESC_LIMIT):
     return text[:limit].rsplit(" ", 1)[0] + "…"
 
 
+def notes_section(notes, names):
+    """Grubun şampiyonlar hakkındaki kendi gözlemleri (yalnızca havuzlarda geçenler)."""
+    if not notes:
+        return ""
+    lines = ["## Şampiyon notlarımız (grubun kendi gözlemi)", ""]
+    for ddid, note in sorted(notes.items(), key=lambda kv: names.get(_norm(kv[0]), kv[0]).lower()):
+        lines.append(f"- **{names.get(_norm(ddid), ddid)}:** {note}")
+    return "\n".join(lines)
+
+
 def kits_section(kits, names, patch=None):
     """Havuzlardaki şampiyonların ulti özetleri: bilinmeyen/yeni şampiyonlar için dayanak."""
     if not kits:
@@ -275,14 +300,18 @@ def kits_section(kits, names, patch=None):
     return "\n".join(lines)
 
 
-def build_prompt(pools, names, shared=None, profile_names=None, mode="karma", kits=None, patch=None):
+def build_prompt(pools, names, shared=None, profile_names=None, mode="karma", kits=None, patch=None,
+                 notes=None):
     """shared: synergy.shared_matches çıktısı; profile_names: profil id -> ad; mode: MODES anahtarı;
-    kits: ddragon_id -> ulti özeti; patch: Data Dragon sürümü."""
+    kits: ddragon_id -> ulti özeti; patch: Data Dragon sürümü; notes: ddragon_id -> grubun notu."""
     parts = [task_intro(mode, patch), "## Oyuncular", "", LEGEND, ""]
     parts += [player_section(p, names) + "\n" for p in pools]
     parts.append(role_matrix_section(pools, names) + "\n")
     if shared is not None:
         parts.append(synergy_section(shared, profile_names, names) + "\n")
+    note_text = notes_section(notes, names)
+    if note_text:
+        parts.append(note_text + "\n")
     kit_text = kits_section(kits, names, patch)
     if kit_text:
         parts.append(kit_text + "\n")

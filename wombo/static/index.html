@@ -69,6 +69,8 @@ main { max-width: 1280px; margin: 0 auto; padding: 18px 16px 120px; }
 .card-head { display: flex; align-items: flex-start; gap: 8px; }
 .card-head .name { font-weight: 700; font-size: 16px; }
 .card-head .ids { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.rank { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--gold); font-weight: 500; white-space: nowrap; }
 .badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--teal); color: var(--teal); white-space: nowrap; }
 .pick { margin-left: auto; white-space: nowrap; }
 .card.sel .pick { background: var(--gold); color: #1a1408; border-color: var(--gold); }
@@ -195,6 +197,7 @@ details[open] summary { margin-bottom: 4px; }
       <option value="200">200 maç</option>
       <option value="300">300 maç</option>
     </select>
+    <button id="notesBtn" title="Şampiyonlar hakkında grubun notları; brief'e girer">Notlar</button>
     <button id="updateAll">Herkesi güncelle</button>
   </div>
   <div class="job" id="job">
@@ -279,6 +282,19 @@ details[open] summary { margin-bottom: 4px; }
     <button id="testKey">Kayıtlı anahtarı test et</button>
     <button id="closeKey">Kapat</button>
   </div>
+</div>
+
+<div class="modal" id="notesModal" role="dialog" aria-label="Şampiyon notları">
+  <h2>Şampiyon notları</h2>
+  <p class="muted" style="margin:0">Bir şampiyon hakkında grubun gözlemi, ör. "Locke kaosu fırsata çevirir, tek atar".
+    Şampiyon seçili 5 kişiden birinin havuzundaysa not brief'e girer ve Claude buna öncelik verir.</p>
+  <div class="list" id="notesList"></div>
+  <form id="noteForm" class="inline">
+    <input name="champion" list="champList" placeholder="Şampiyon" required style="flex:0 1 160px">
+    <input name="note" placeholder="Not" required maxlength="300">
+    <button class="primary">Kaydet</button>
+  </form>
+  <div class="actions"><button id="closeNotes">Kapat</button></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -428,7 +444,7 @@ function card(p) {
   return `<article class="card ${sel ? "sel" : ""}">
     <div class="card-head">
       <div>
-        <div class="name">${esc(p.name)} ${p.flexible ? `<span class="badge" title="8+ Main/Oynayabilir şampiyon">Esnek</span>` : ""}</div>
+        <div class="name">${esc(p.name)} ${p.rank ? `<span class="rank" title="Dereceli (Solo, yoksa Flex)">${esc(p.rank)}</span>` : ""} ${p.flexible ? `<span class="badge" title="8+ Main/Oynayabilir şampiyon">Esnek</span>` : ""}</div>
         <div class="ids">${ids}</div>
       </div>
       <button class="pick" data-pick="${p.id}">${sel ? "Takımda" : "Takıma ekle"}</button>
@@ -697,6 +713,7 @@ document.addEventListener("click", e => {
     if (!confirm("Bu hesap ve maç verisi silinsin mi?")) return;
     return refreshAfter(() => api("DELETE", `/api/accounts/${encodeURIComponent(t.dataset.delAccount)}`));
   }
+  if (t.dataset.delNote) return run(async () => renderNotes(await api("DELETE", `/api/notes/${encodeURIComponent(t.dataset.delNote)}`)));
   if (t.dataset.delExtra) return refreshAfter(() => api("DELETE", `/api/profiles/${detail.id}/extras/${encodeURIComponent(t.dataset.delExtra)}`));
   if (t.id === "updateOne") return startUpdate([detail.id]);
   if (t.id === "deleteProfile") {
@@ -745,6 +762,12 @@ document.addEventListener("submit", e => {
         ? `✓ ${r.riot_id} eklendi. Maç verisi otomatik çekiliyor (hesap başına ~2 dk), ilerlemesi kartta görünür.`
         : `✓ ${r.riot_id} eklendi.`;
     });
+  } else if (f.id === "noteForm") {
+    submitForm(f, async () => {
+      renderNotes(await api("POST", "/api/notes", data));
+      f.reset();
+      return "✓ Not kaydedildi.";
+    }, "Kaydediliyor…");
   } else if (f.id === "diagForm") {
     submitForm(f, async () => {
       const r = await api("POST", "/api/diagnose", data);
@@ -779,7 +802,23 @@ $("#overlay").addEventListener("click", () => {
   closeDrawer();
   $("#briefModal").classList.remove("show");
   $("#keyModal").classList.remove("show");
+  $("#notesModal").classList.remove("show");
 });
+
+function renderNotes(notes) {
+  $("#notesList").innerHTML = notes.map(n => `<div class="item">
+      <span class="grow"><strong>${esc(n.name)}:</strong> ${esc(n.note)}</span>
+      <button class="ghost danger small" data-del-note="${esc(n.id)}">Sil</button>
+    </div>`).join("") || `<div class="small muted">Henüz not yok.</div>`;
+}
+
+$("#notesBtn").addEventListener("click", () => run(async () => {
+  renderNotes(await api("GET", "/api/notes"));
+  $("#notesModal").classList.add("show");
+  $("#overlay").classList.add("show");
+  loadChampList();
+}));
+$("#closeNotes").addEventListener("click", () => $("#overlay").click());
 document.addEventListener("keydown", e => { if (e.key === "Escape") $("#overlay").click(); });
 
 $("#updateAll").addEventListener("click", () => startUpdate([]));

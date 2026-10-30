@@ -28,6 +28,38 @@ class StatAverager:
         return {k: self.sums[k] / self.counts[k] for k in self.sums}
 
 
+TIERS = ("IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND",
+         "MASTER", "GRANDMASTER", "CHALLENGER")
+DIVISIONS = ("IV", "III", "II", "I")
+QUEUE_NAMES = {"RANKED_SOLO_5x5": "Solo", "RANKED_FLEX_SR": "Flex"}
+
+
+def best_ranks(entries):
+    """Birden fazla hesabın dereceli kayıtlarından kuyruk başına en yükseği: {"Solo": kayıt, ...}."""
+    def strength(e):
+        tier = TIERS.index(e["tier"]) if e.get("tier") in TIERS else -1
+        division = DIVISIONS.index(e["rank"]) if e.get("rank") in DIVISIONS else 0
+        return tier, division, e.get("leaguePoints", 0)
+
+    best = {}
+    for e in entries:
+        queue = QUEUE_NAMES.get(e.get("queueType"))
+        if queue and (queue not in best or strength(e) > strength(best[queue])):
+            best[queue] = e
+    return {q: best[q] for q in ("Solo", "Flex") if q in best}
+
+
+def format_rank(entry, detail=True):
+    """{"tier": "GOLD", "rank": "II", ...} -> "Gold II 45 LP (%52, 120 maç)"."""
+    tier = entry["tier"].title()
+    text = tier if entry["tier"] in ("MASTER", "GRANDMASTER", "CHALLENGER") else f"{tier} {entry['rank']}"
+    if not detail:
+        return text
+    games = entry.get("wins", 0) + entry.get("losses", 0)
+    wr = f"%{round(100 * entry['wins'] / games)}, " if games else ""
+    return f"{text} {entry.get('leaguePoints', 0)} LP ({wr}{games} maç)"
+
+
 def _row_stats(row):
     """Maç satırındaki JSON istatistikler (sütun yoksa ya da boşsa None)."""
     try:
@@ -149,6 +181,7 @@ class PlayerPool:
     note: str = ""
     style: dict = field(default_factory=dict)   # SR maç başı ortalamalar (hasar payı, CC süresi...)
     aram: list = field(default_factory=list)    # [(şampiyon, maç)] — havuza sayılmaz
+    ranks: dict = field(default_factory=dict)  # {"Solo": kayıt, "Flex": kayıt} (en yüksek hesap)
     role_counts: dict = field(default_factory=dict)  # rol -> SR maç sayısı
     role_champs: dict = field(default_factory=dict)  # rol -> [(şampiyon, maç)] en çok oynananlar
 
@@ -162,7 +195,7 @@ class PlayerPool:
 
 
 def build_pool(match_rows, mastery_rows, extra_rows, name="", riot_ids=(), preferred_roles=(),
-               avoided_roles=(), note="", now_ms=None):
+               avoided_roles=(), note="", now_ms=None, rank_entries=()):
     """Bir profilin (tüm hesaplarının) verisinden şampiyon havuzunu çıkarır."""
     now_ms = now_ms or int(time.time() * 1000)
     stats = {}
@@ -223,4 +256,4 @@ def build_pool(match_rows, mastery_rows, extra_rows, name="", riot_ids=(), prefe
     return PlayerPool(name, list(riot_ids), champions, role_share, sr_games,
                       list(preferred_roles), list(avoided_roles), note or "",
                       style=overall.averages(), aram=aram.most_common(),
-                      role_counts=dict(roles), role_champs=role_champs)
+                      ranks=best_ranks(rank_entries), role_counts=dict(roles), role_champs=role_champs)

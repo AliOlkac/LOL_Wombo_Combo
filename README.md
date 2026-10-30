@@ -45,6 +45,8 @@ Brief'te her oyuncu için şunlar yer alır:
 - ARAM'da sık oynadığı şampiyonlar (havuza sayılmaz, deneysel fikirler için)
 - Seçili oyuncuların birlikte oynadığı maçlardan kanıtlanmış ikililer (ör. "Ali Miss Fortune (Support) + Lao Jhin (ADC): 14 maç, %71")
 - Rol matrisi: her oyuncunun her rolde kaç maç oynadığı ve o rolde en çok hangi şampiyonları oynadığı
+- Rank: hesaplar arasından en yüksek Solo ve Flex derecesi (güncelleme sırasında hesap başına tek istekle çekilir; kartlarda da görünür)
+- Şampiyon notlarımız: üstteki **Notlar** düğmesinden şampiyonlar hakkında grubun kendi gözlemini yazarsın. Örneğin Locke için varsayılan not: "Çok hızlı sağa sola gidip takım savaşındaki kaosu fırsata çevirir; tek atma ve taşıma potansiyeli yüksek." Şampiyon seçili oyunculardan birinin havuzundaysa not brief'e girer.
 - Havuzdaki şampiyonların ulti özetleri ve güncel yama (Data Dragon'dan). Böylece Claude'un bilmediği yeni ya da rework almış şampiyonlar da doğru değerlendirilir. Bu özetler yama başına bir kez, güncelleme sırasında indirilir.
 
 Brief önce veriyi, en sonda kuralları ve çıktı formatını verir. Kurallar şunları içerir:
@@ -54,9 +56,14 @@ Brief önce veriyi, en sonda kuralları ve çıktı formatını verir. Kurallar 
 
 İstenen çıktı kısa ve özdür: tam 5'li comp yerine **10-20 wombo çekirdeği**. Çekirdek, ultileri birbirine zincirlenen 2-5 kişilik (çoğunlukla 3-4) bir gruptur; kalan oyuncular serbesttir ya da isteğe bağlı bir öneri alır. Her çekirdek tek bir tablo satırıdır:
 
-| # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Not |
-|---|---|---|---|---|---|
-| 1 | Sağlam | civaHg Amumu (Jg) + Ali MF (Sup) + Lao Jhin (ADC) | Amumu R → Jhin W → MF R | Top, Mid (isteğe bağlı: Joni Kennen) | ikili 14 maç %71 |
+| # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Wombo | Obje | Keyif | Not |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Sağlam | civaHg Amumu (Jg) + Ali MF (Sup) + Lao Jhin (ADC) | Amumu R → Jhin W → MF R | Top, Mid (isteğe bağlı: Joni Kennen) | 5 | 3 | 4 | ikili 14 maç %71 |
+
+Puanlar 1-5 arası:
+- **Wombo:** ulti zincirinin gücü
+- **Obje:** ejderha ve Baron'u ne kadar hızlı eritir
+- **Keyif:** oynaması ne kadar eğlenceli
 
 Tablonun altında yalnızca öne çıkanlar (en fazla 3 madde), ortak banlar ve varsa belirsizlikler gelir. Bir çekirdeğin ayrıntısını (tam kadro, ilk 15 dakika, draft sırası, yedekler) istemek için numarasını yazman yeterli.
 
@@ -77,6 +84,8 @@ python -m wombo liste
 python -m wombo havuz Ali
 python -m wombo rol Ali --tercih top,jg --oynamaz sup --not "tank sever"
 python -m wombo ekstra Ali Wukong --seviye esneme --not "eski main"
+python -m wombo not Locke "kaosu fırsata çevirir, tek atar"     # şampiyon notu (brief'e girer)
+python -m wombo not                                             # tüm notlar
 python -m wombo takim Ali Veli Ayşe Can Ece -o brief.md
 python -m wombo takim Ali Veli Ayşe Can Ece --mod deneysel   # karma | klasik | deneysel
 python -m wombo guncelle --mac 300                            # daha derin geçmiş

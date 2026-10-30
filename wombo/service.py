@@ -272,6 +272,7 @@ def extract_stats(p, info):
         "immobilize": ch.get("enemyChampionImmobilizations"),
         "solo_kills": ch.get("soloKills"),
         "cs_pm": (p.get("totalMinionsKilled", 0) + p.get("neutralMinionsKilled", 0)) / minutes,
+        "obj_dpm": (p["damageDealtToObjectives"] / minutes) if "damageDealtToObjectives" in p else None,
         "vision_pm": ch.get("visionScorePerMinute"),
     }
     return {k: round(v, 3) for k, v in stats.items() if isinstance(v, (int, float))}
@@ -347,6 +348,10 @@ def update_account(client, store, account, max_matches=100, progress=None):
     rows = [(store.champion_by_numeric_id(m["championId"]), m["championPoints"],
              m["championLevel"], m.get("lastPlayTime")) for m in client.masteries(puuid, platform)]
     store.set_mastery(puuid, rows)
+    try:  # rank yalnızca bağlam; alınamazsa güncelleme yine tamamlansın
+        store.set_rank(puuid, client.league_entries(puuid, platform))
+    except RiotError:
+        pass
     store.mark_updated(puuid, int(time.time()))
     return len(new_ids)
 
@@ -379,8 +384,10 @@ def team_brief(store, profiles, mode="karma"):
     ddids = sorted({index[_norm(c.champion)][0] for pool in pools for c in pool.champions[:MAX_CHAMPS]
                     if _norm(c.champion) in index})
     kits = ensure_kits(store, ddids, limit=60)  # çoğu güncelleme sırasında önceden indirilir
+    in_pools = {_norm(d) for d in ddids}
+    notes = {d: n for d, n in store.notes().items() if _norm(d) in in_pools}
     return build_prompt(pools, store.champion_names(), shared, {p["id"]: p["name"] for p in profiles},
-                        mode=mode, kits=kits, patch=store.ddragon_version())
+                        mode=mode, kits=kits, patch=store.ddragon_version(), notes=notes)
 
 
 def load_pool(store, profile):
@@ -390,4 +397,5 @@ def load_pool(store, profile):
                       riot_ids=[a["riot_id"] for a in store.accounts(pid)],
                       preferred_roles=split_roles(profile["preferred_roles"]),
                       avoided_roles=split_roles(profile["avoided_roles"]),
+                      rank_entries=store.profile_ranks(pid),
                       note=profile["note"])

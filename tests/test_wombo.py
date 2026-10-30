@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 
 from wombo import service
 from wombo.pool import MAIN, PLAYABLE, STRETCH, ChampStat, build_pool, comfort_score, parse_roles
-from wombo.prompt import build_prompt, synergy_section
+from wombo.prompt import build_prompt, player_section, synergy_section
 from wombo.riot import RateLimiter, RiotAuthError, RiotClient, RiotError
 from wombo.store import Store
 from wombo.synergy import duo_stats, shared_matches
@@ -163,6 +163,10 @@ class FakeClient:
     def masteries(self, puuid, platform=None):
         self.mastery_platforms.append(platform)
         return [{"championId": 103, "championPoints": 50_000, "championLevel": 5}]
+
+    def league_entries(self, puuid, platform=None):
+        return [{"queueType": "RANKED_SOLO_5x5", "tier": "GOLD", "rank": "II", "leaguePoints": 45,
+                 "wins": 26, "losses": 24}]
 
 
 def friend_matches():
@@ -497,7 +501,7 @@ class StrongerPromptTest(unittest.TestCase):
         self.assertTrue(text.index("# Kurallar") < exp < text.index("# İstenen çıktı"))
         for must in ("Yasuo R yalnızca havaya kalkmış", "5 maçtan az winrate'i kanıt sayma",
                      "**10-20 wombo çekirdeği**", "Tam 5'li comp kurmak zorunda değilsin", "**kısa ve öz**",
-                     "| # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Not |", "isteğe bağlı: Oyuncu Şampiyon",
+                     "| # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Wombo | Obje | Keyif | Not |", "isteğe bağlı: Oyuncu Şampiyon",
                      "en az\n  üçte biri o şampiyon olmadan", "**Öne çıkanlar**", "**Ortak banlar**",
                      "Bir çekirdeğin numarasını yazarsak o zaman ayrıntı ver"):
             self.assertIn(must, text)
@@ -535,6 +539,62 @@ class StrongerPromptTest(unittest.TestCase):
 
     def test_brief_without_network_has_no_kit_section(self):
         self.assertNotIn("## Şampiyon ulti özetleri", self.brief())
+
+
+class RankAndNotesTest(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+        self.addCleanup(self.store.close)
+
+    def test_best_rank_across_accounts_and_format(self):
+        from wombo.pool import best_ranks, format_rank
+        entries = [
+            {"queueType": "RANKED_SOLO_5x5", "tier": "GOLD", "rank": "I", "leaguePoints": 10, "wins": 10, "losses": 10},
+            {"queueType": "RANKED_SOLO_5x5", "tier": "PLATINUM", "rank": "IV", "leaguePoints": 0, "wins": 30, "losses": 20},
+            {"queueType": "RANKED_FLEX_SR", "tier": "MASTER", "rank": "I", "leaguePoints": 120, "wins": 5, "losses": 5},
+            {"queueType": "CHERRY", "tier": "GOLD", "rank": "I"},
+        ]
+        best = best_ranks(entries)
+        self.assertEqual(list(best), ["Solo", "Flex"])
+        self.assertEqual(format_rank(best["Solo"]), "Platinum IV 0 LP (%60, 50 maç)")
+        self.assertEqual(format_rank(best["Flex"], detail=False), "Master")
+
+    def test_update_stores_rank_and_brief_shows_it(self):
+        pid = self.store.create_profile("Ali")
+        self.store.add_account("me", "Oqila#4310", pid)
+        service.update_account(FakeClient(friend_matches()), self.store, self.store.accounts(pid)[0])
+        pool = service.load_pool(self.store, self.store.profile(pid))
+        self.assertIn("Rank: Solo Gold II 45 LP (%52, 50 maç)", player_section(pool, {}))
+
+    def test_rank_failure_does_not_break_update(self):
+        pid = self.store.create_profile("Ali")
+        self.store.add_account("me", "Oqila#4310", pid)
+        client = FakeClient(friend_matches())
+
+        def forbidden(puuid, platform=None):
+            raise RiotAuthError("403")
+        client.league_entries = forbidden
+        service.update_account(client, self.store, self.store.accounts(pid)[0])
+        self.assertIsNotNone(self.store.accounts(pid)[0]["last_update"])
+
+    def test_default_locke_note_seeded_once_and_editable(self):
+        self.assertIn("tek atma ve taşıma potansiyeli yüksek", self.store.notes()["Locke"])
+        self.store.remove_note("Locke")
+        self.store._migrate()  # tekrar açılınca silinen varsayılan geri gelmez
+        self.assertNotIn("Locke", self.store.notes())
+
+    def test_brief_includes_notes_for_pool_champions_only(self):
+        ids = seed_team(self.store)
+        self.store.set_note("Ahri", "Charm ile combo başlatır.")
+        self.store.set_note("Malphite", "Bizde tank top.")
+        self.store.set_note("Zed", "Kimse oynamıyor.")
+        text = service.team_brief(self.store, [self.store.profile(i) for i in ids])
+        self.assertIn("## Şampiyon notlarımız (grubun kendi gözlemi)", text)
+        self.assertIn("- **Ahri:** Charm ile combo başlatır.", text)
+        self.assertNotIn("Kimse oynamıyor", text)
+        for must in ("## Puanlama (her çekirdek için 1-5)", "**Obje:** ejderha ve Baron'u", "**Keyif:**",
+                     "en güçlü wombo, en hızlı obje ve en keyifli"):
+            self.assertIn(must, text)
 
 
 class RateLimiterTest(unittest.TestCase):
@@ -711,6 +771,25 @@ class WebApiTest(unittest.TestCase):
             code, err = self.call("POST", "/api/update", {"max_matches": 5000})
         self.assertEqual(code, 400)
         self.assertIn("derinliği", err["error"])
+
+    def test_notes_api_and_rank_label(self):
+        code, notes = self.call("GET", "/api/notes")
+        self.assertIn("Locke", [n["id"] for n in notes])  # varsayılan not
+        code, notes = self.call("POST", "/api/notes", {"champion": "wukong", "note": "  R ile  havaya kaldırır "})
+        self.assertEqual(code, 200)
+        self.assertIn({"id": "MonkeyKing", "name": "Wukong", "note": "R ile havaya kaldırır"}, notes)
+        code, err = self.call("POST", "/api/notes", {"champion": "Yok", "note": "x"})
+        self.assertEqual(code, 400)
+        code, notes = self.call("DELETE", "/api/notes/MonkeyKing")
+        self.assertNotIn("MonkeyKing", [n["id"] for n in notes])
+
+        store = Store(self.db)
+        store.set_rank("p1", [{"queueType": "RANKED_FLEX_SR", "tier": "SILVER", "rank": "I",
+                               "leaguePoints": 3, "wins": 1, "losses": 1}])
+        store.close()
+        code, state = self.call("GET", "/api/state")
+        ranks = {p["name"]: p["rank"] for p in state["profiles"]}
+        self.assertEqual((ranks["Oyuncu1"], ranks["Oyuncu2"]), ("Flex Silver I", None))
 
     def test_non_json_post_is_rejected(self):
         code, _ = self.call("POST", "/api/profiles", {"name": "X"}, content_type="text/plain")

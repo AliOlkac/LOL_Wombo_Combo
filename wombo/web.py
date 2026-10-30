@@ -14,7 +14,7 @@ from urllib.error import URLError
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import service
-from .pool import POSITION_NAMES, TIER_ALIASES, TIER_ORDER, parse_roles
+from .pool import POSITION_NAMES, TIER_ALIASES, TIER_ORDER, format_rank, parse_roles
 from .riot import RiotAuthError, RiotError
 from .store import Store, _norm
 
@@ -146,8 +146,24 @@ def profile_json(store, profile, index, full=False):
                      for a in store.accounts(profile["id"])],
         "role_share": [[pos, round(share * 100)] for pos, share in pool.role_share.items()],
         "sr_games": pool.sr_games, "breadth": pool.breadth, "flexible": pool.flexible,
+        "rank": rank_label(pool.ranks),
         "counts": counts, "champions": [champ_json(c, index) for c in champs],
     }
+
+
+def rank_label(ranks):
+    """Kart için kısa rank: önce Solo, yoksa Flex."""
+    if "Solo" in ranks:
+        return format_rank(ranks["Solo"], detail=False)
+    if "Flex" in ranks:
+        return "Flex " + format_rank(ranks["Flex"], detail=False)
+    return None
+
+
+def notes_json(store):
+    index = store.champion_index()
+    return [{"id": ddid, "name": index.get(_norm(ddid), (ddid, ddid))[1], "note": note}
+            for ddid, note in store.notes().items()]
 
 
 def key_status():
@@ -296,6 +312,28 @@ def api_diagnose(h, store):
     return {"text": service.diagnose(store, riot_id, h.server.platform)}
 
 
+def api_notes(h, store):
+    return notes_json(store)
+
+
+def api_set_note(h, store):
+    data = h.body()
+    service.ensure_champions(store)
+    champion = store.find_champion(data.get("champion") or "")
+    if champion is None:
+        raise ValueError(f"Şampiyon bulunamadı: {data.get('champion')}")
+    note = " ".join((data.get("note") or "").split())
+    if not note:
+        raise ValueError("Not boş olamaz.")
+    store.set_note(champion, note[:300])
+    return notes_json(store)
+
+
+def api_delete_note(h, store, ddid):
+    store.remove_note(unquote(ddid))
+    return notes_json(store)
+
+
 def api_champions(h, store):
     service.ensure_champions(store)
     return sorted((name for _, name in store.champion_index().values()), key=str.lower)
@@ -319,6 +357,9 @@ ROUTES = [
     ("POST", r"/api/key", api_save_key),
     ("POST", r"/api/key/test", api_test_key),
     ("POST", r"/api/diagnose", api_diagnose),
+    ("GET", r"/api/notes", api_notes),
+    ("POST", r"/api/notes", api_set_note),
+    ("DELETE", r"/api/notes/([^/]+)", api_delete_note),
 ]
 
 

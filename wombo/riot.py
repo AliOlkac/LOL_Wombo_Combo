@@ -140,6 +140,11 @@ class RiotClient:
         """Anahtar gerektiren hafif bir uç; anahtar ve bağlantı testi için."""
         return self._get(self.platform, "/lol/status/v4/platform-data")
 
+    def league_entries(self, puuid, platform=None):
+        """Dereceli kayıtlar: [{queueType, tier, rank, leaguePoints, wins, losses}, ...]."""
+        host = platform if platform in PLATFORM_TO_REGION else self.platform
+        return self._get(host, f"/lol/league/v4/entries/by-puuid/{puuid}") or []
+
     def masteries(self, puuid, platform=None):
         """platform verilmezse istemcinin sunucusu kullanılır (ör. maç ID'sinden 'tr1')."""
         host = platform if platform in PLATFORM_TO_REGION else self.platform

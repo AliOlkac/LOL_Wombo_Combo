@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     puuid TEXT PRIMARY KEY,
     riot_id TEXT NOT NULL,
     profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    last_update INTEGER
+    last_update INTEGER,
+    rank TEXT                       -- JSON: league-v4 kayıtları (Solo/Flex)
 );
 CREATE TABLE IF NOT EXISTS matches (
     match_id TEXT NOT NULL,
@@ -72,6 +73,10 @@ CREATE TABLE IF NOT EXISTS champion_kits (
     ult_name TEXT,
     ult_desc TEXT
 );
+CREATE TABLE IF NOT EXISTS champion_notes (
+    ddid TEXT PRIMARY KEY,          -- şampiyon hakkında grubun kendi gözlemi; brief'e girer
+    note TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -79,6 +84,11 @@ CREATE TABLE IF NOT EXISTS meta (
 """
 
 POSITIONS = ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")
+
+DEFAULT_NOTES = {
+    "Locke": "Çok hızlı sağa sola gidip takım savaşındaki kaosu fırsata çevirir; "
+             "tek atma ve taşıma potansiyeli yüksek.",
+}
 
 
 def _norm(text):
@@ -102,11 +112,16 @@ class Store:
         self._migrate()
 
     def _migrate(self):
-        """Eski veritabanlarına sonradan eklenen sütunları ekler."""
-        columns = {r["name"] for r in self.db.execute("PRAGMA table_info(matches)")}
-        if "stats" not in columns:
-            self.db.execute("ALTER TABLE matches ADD COLUMN stats TEXT")
-            self.db.commit()
+        """Eski veritabanlarına sonradan eklenen sütunları ve varsayılan notları ekler."""
+        for table, column in (("matches", "stats"), ("accounts", "rank")):
+            columns = {r["name"] for r in self.db.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+        # Varsayılan notlar bir kez eklenir; kullanıcı sonra düzenleyip silebilir
+        if self.db.execute("SELECT 1 FROM meta WHERE key = 'default_notes_v1'").fetchone() is None:
+            self.db.executemany("INSERT OR IGNORE INTO champion_notes VALUES (?, ?)", DEFAULT_NOTES.items())
+            self.db.execute("INSERT INTO meta VALUES ('default_notes_v1', '1')")
+        self.db.commit()
 
     def close(self):
         self.db.close()
@@ -178,6 +193,29 @@ class Store:
             self.db.execute(f"DELETE FROM {table} WHERE puuid = ?", (puuid,))
         if commit:
             self.db.commit()
+
+    def set_rank(self, puuid, entries):
+        self.db.execute("UPDATE accounts SET rank = ? WHERE puuid = ?", (json.dumps(entries), puuid))
+        self.db.commit()
+
+    def profile_ranks(self, profile_id):
+        """Profilin tüm hesaplarının dereceli kayıtları (düz liste)."""
+        entries = []
+        for r in self.db.execute("SELECT rank FROM accounts WHERE profile_id = ?", (profile_id,)):
+            entries += json.loads(r["rank"]) if r["rank"] else []
+        return entries
+
+    # --- şampiyon notları ---
+    def notes(self):
+        return {r["ddid"]: r["note"] for r in self.db.execute("SELECT * FROM champion_notes ORDER BY ddid")}
+
+    def set_note(self, ddid, note):
+        self.db.execute("INSERT OR REPLACE INTO champion_notes VALUES (?, ?)", (ddid, note))
+        self.db.commit()
+
+    def remove_note(self, ddid):
+        self.db.execute("DELETE FROM champion_notes WHERE ddid = ?", (ddid,))
+        self.db.commit()
 
     def mark_updated(self, puuid, ts):
         self.db.execute("UPDATE accounts SET last_update = ? WHERE puuid = ?", (ts, puuid))
