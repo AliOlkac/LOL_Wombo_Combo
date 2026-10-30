@@ -23,23 +23,19 @@ LEGEND = (
 )
 
 MODES = {
-    "karma": "2 sağlam + 1 deneysel",
-    "klasik": "3 sağlam",
-    "deneysel": "3 deneysel (troll görünen ama güçlü)",
+    "karma": "karışık (yaklaşık üçte biri deneysel)",
+    "klasik": "hepsi sağlam",
+    "deneysel": "çoğu deneysel (troll görünen ama güçlü)",
 }
+CORE_COUNT = "10-20"  # tek seferde istenen wombo çekirdeği sayısı
 
 EXPERIMENTAL = """
-## Deneysel comp ne demek
-Lane ve meta kalıplarına sıkışma. "Troll görünür ama mekanik olarak tutarlı" fikirler istiyoruz:
-iki AP bot, ADC'siz comp, iki support, mid'de ADC ya da support şampiyonu, top'ta ranged ya da
-support şampiyonu, erken 5'li baskın, funnel, lane swap gibi. Şampiyonlar yine havuzdan gelir
-(Esnek oyunculara işaretli havuz dışı öneri serbest; ARAM'da sık oynadıkları da aday olabilir).
-Her deneysel comp için yaz:
-- Neden işe yarar, rakip neyi beklemez
-- Hangi rakip comp'a karşı açılmamalı
-- Oyuncu bu şampiyonu bu rolde daha önce oynamış mı (Roller sütunu), oynamadıysa riski
-Oyun tarzı satırlarını (hasar payı, alınan hasar, CC süresi, solo kill) kimin taşıyıcı, kimin
-ön saf/engage olabileceğine karar verirken kullan.
+## Deneysel çekirdek ne demek
+Lane ve meta kalıplarına sıkışma: "troll görünür ama mekanik olarak tutarlı" fikirler. Örnekler:
+iki AP bot, ADC'siz diziliş, iki support, mid'de ADC ya da support şampiyonu, top'ta ranged ya da
+support şampiyonu, erken 5'li baskın, funnel, lane swap. Şampiyonlar yine havuzdan gelir (Esnek
+oyunculara işaretli havuz dışı öneri ve ARAM'da sık oynadıkları da aday). Not sütununda neden
+işe yaradığını ya da riskini kısaca yaz.
 """
 
 
@@ -51,93 +47,82 @@ def _check_mode(mode):
 def task_intro(mode="karma", patch=None):
     """Brief'in başı: rol, amaç ve bağlam. Ayrıntılı kurallar verinin ardından gelir."""
     _check_mode(mode)
-    if mode == "klasik":
-        task = "3 farklı sağlam wombo comp kur."
-    elif mode == "karma":
-        task = "3 farklı wombo comp kur: ilk ikisi sağlam, **üçüncüsü deneysel**."
-    else:
-        task = "3 farklı **deneysel** wombo comp kur."
+    mix = {"klasik": "Hepsi sağlam olsun.",
+           "karma": "Yaklaşık üçte biri **deneysel** olsun.",
+           "deneysel": "Çoğu **deneysel** olsun (troll görünen ama güçlü)."}[mode]
     source = f"Riot API, yama {patch}" if patch else "Riot API"
     return f"""\
 # Wombo combo koçluk isteği
 
-Sen deneyimli bir League of Legends koçu ve analistisin. Türkçe cevap ver.
+Sen deneyimli bir League of Legends koçu ve analistisin. Türkçe, **kısa ve öz** cevap ver.
 Aşağıda 5 kişilik premade takımımızın gerçek maç verisi var ({source}).
-Bu 5 kişiyle oynanabilecek **wombo combo** takımları kur: takım savaşında üst üste binen AoE
-engage, havaya kaldırma/çekme ve AoE hasar ultilerinin zincirlendiği diziliş. {task}
+Bize **{CORE_COUNT} wombo çekirdeği** öner. {mix}
 
-Hepimiz aynı takımda ve sesli iletişimdeyiz: solo queue'da tutmayan, zamanlama isteyen ulti
-zincirleri bizim için gerçekçi. Önce verileri oku; kurallar ve istenen çıktı formatı en sonda.
+**Wombo çekirdeği:** 2-5 oyuncudan (çoğunlukla 3-4) oluşan, ultileri ve CC'leri birbirine
+zincirlenen grup: AoE engage, havaya kaldırma/çekme ve AoE hasar. Çekirdekte olmayan oyuncular
+serbesttir, kendi rollerinde rahat ettikleri şampiyonu alırlar. Tam 5'li comp kurmak zorunda değilsin.
+
+Hepimiz aynı takımda ve sesli iletişimdeyiz: zamanlama isteyen ulti zincirleri bizim için gerçekçi.
+Önce verileri oku; kurallar ve istenen çıktı formatı en sonda.
 """
 
 
 def rules_and_format(mode="karma"):
-    """Brief'in sonu: kurallar, mekanik doğruluk, çeşitlilik ve çıktı formatı."""
+    """Brief'in sonu: kurallar, mekanik doğruluk, çeşitlilik ve kısa çıktı formatı."""
     _check_mode(mode)
     stretch_limit = "iki" if mode == "deneysel" else "bir"
     experimental = EXPERIMENTAL if mode != "klasik" else ""
-    text = f"""\
+    return f"""\
 # Kurallar
 
 ## Havuz ve roller
 - Her oyuncuya yalnızca **kendi havuzundaki** şampiyonlardan ver.
-  Tercih sırası: {MAIN} > {PLAYABLE} > {STRETCH}. Comp başına en fazla {stretch_limit} {STRETCH} pick olsun.
-- Her rol (Top, Jungle, Mid, ADC, Support) bir kez. **Meta rol kalıplarına takılma:** "Roller"
-  sütunu ve rol matrisi oyuncunun şampiyonu gerçekte hangi rolde kaç maç oynadığını gösterir
-  (ör. Kai'Sa Mid, Miss Fortune Support). Şampiyonu oyuncunun oynadığı rolde değerlendir;
-  off-meta seçimler serbest, iyi çalışıyorsa tercih sebebidir.
+  Tercih sırası: {MAIN} > {PLAYABLE} > {STRETCH}. Çekirdek başına en fazla {stretch_limit} {STRETCH} pick olsun.
+- Bir çekirdekte her rol en fazla bir kez; çekirdek dışındaki oyuncular kalan rolleri alabilmeli.
+  **Meta rol kalıplarına takılma:** "Roller" sütunu ve rol matrisi oyuncunun şampiyonu gerçekte
+  hangi rolde kaç maç oynadığını gösterir (ör. Kai'Sa Mid, Miss Fortune Support). Off-meta serbest.
 - **"Oynamaz" (✕) rol o oyuncuya asla verilmez.** "Tercih eder" (✓) rolleri mümkünse kullan.
-- **Esnek** işaretli oyunculara havuzlarında olmayan ama oynadıklarına çok benzeyen bir şampiyon
-  önerebilirsin; mutlaka "havuz dışı öneri" diye işaretle ve neden benzediğini söyle.
+- **Esnek** oyunculara havuz dışı benzer bir şampiyon önerebilirsin; "havuz dışı" diye işaretle.
 
 ## Veriyi doğru oku
 - Az maç gürültüdür: 5 maçtan az winrate'i kanıt sayma; maç sayısı ve mastery daha güvenilir.
-  Maç sayısı 0 olan (yalnızca mastery'den gelen) şampiyonlar uzun süredir oynanmamış olabilir:
-  kullanırsan "pas atmış olabilir" riskini belirt.
-- "Hasar%" takım hasarındaki pay, "CC sn" maç başı rakibi kontrol ettiği süre. Oyun tarzı
-  satırlarıyla birlikte kimin taşıdığını, kimin ön saf/engage olduğunu bunlardan oku.
-- **Birlikte oynadığınız maçlar** gerçek ortak maçlarımızdan çıkarıldı. Çok maçlı ve yüksek
-  winrate'li ikililer kanıtlanmış silahlarımızdır: en az bir comp'u bunlardan birinin etrafına kur
-  ve onu güçlendirecek (engage, AoE, koruma) parçaları ekle. 2-3 maçlık ikililere fazla güvenme.
+  Maç sayısı 0 olan (yalnızca mastery'den gelen) şampiyonlarda "pas" riskini nota yaz.
+- "Hasar%" takım hasarındaki pay, "CC sn" maç başı rakibi kontrol ettiği süre: kimin taşıdığını,
+  kimin engage yaptığını bunlardan oku.
+- **Birlikte oynadığınız maçlar** gerçek ortak maçlarımız. Çok maçlı, yüksek winrate'li ikililer
+  kanıtlanmış silahlarımızdır: birkaç çekirdeği bunların üstüne kur.
 
 ## Mekanik doğruluk
-- Her combo adımının gerçekten çalıştığını kontrol et. Örnekler: Yasuo R yalnızca havaya kalkmış
-  ya da savrulmuş hedeflere basılır (stun veya kök yetmez); kanallı ultiler (Miss Fortune,
-  Katarina, Fiddlesticks, Malzahar...) CC ile kesilir, kilit süresine sığmalı ya da korunmalı;
-  gecikmeli yetenekler (Cho'Gath Q, Lux R) önce kilitlenmiş hedefe atılmalı.
-- Emin olmadığın bir etkileşimi kesin gibi yazma; "emin değilim" de.
-- Bilmediğin, yeni çıkmış ya da rework almış şampiyonlarda **Şampiyon ulti özetleri** bölümünü
-  esas al. Yine de emin değilsen o şampiyonu combo'nun kilit parçası yapma ve sonda sor.
+- Her combo adımı gerçekten çalışmalı. Örnekler: Yasuo R yalnızca havaya kalkmış ya da savrulmuş
+  hedeflere basılır (stun veya kök yetmez); kanallı ultiler (Miss Fortune, Katarina, Fiddlesticks,
+  Malzahar...) CC ile kesilir, kilit süresine sığmalı; gecikmeli yetenekler (Cho'Gath Q, Lux R)
+  önce kilitlenmiş hedefe atılmalı.
+- Emin olmadığın etkileşimi kesin gibi yazma. Bilmediğin, yeni ya da rework almış şampiyonlarda
+  **Şampiyon ulti özetleri**ni esas al; yine de emin değilsen o şampiyonu kullanma.
 
 ## Çeşitlilik
-- Comp'lar birbirinin kopyası olmasın: her biri farklı bir engage kaynağına ya da kazanma koşuluna
-  dayansın.
-- Bir oyuncunun tek gerçek main'i her comp'un kilidi oluyorsa bu bir zafiyettir (banlanırsa hepsi
-  çöker): en az bir comp'u o şampiyon olmadan kur ve bunu belirt.
+- Çekirdekler birbirinin kopyası olmasın: farklı engage kaynakları, farklı oyuncu grupları.
+- Bir oyuncunun tek gerçek main'i her çekirdekte kilit olmasın (banlanırsa hepsi çöker): en az
+  üçte biri o şampiyon olmadan kurulsun.
 {experimental}
 # İstenen çıktı
-Kısa ve uygulanabilir yaz; genel LoL bilgisi anlatma, bizim verimize dayan.
+**Kısa ve öz.** Genel LoL bilgisi anlatma, açıklama paragrafı yazma. Yalnızca şunlar:
 
-1. **Özet tablo** (en üstte): | Comp | Tip (sağlam/deneysel) | Top | Jungle | Mid | ADC | Support | Güç zamanı |
-2. Her comp için:
-   - Başlık: akılda kalan bir isim + tek cümlelik fikir
-   - Kadro tablosu: | Oyuncu | Rol | Şampiyon | Seviye | Veriden kanıt | (kanıt: maç/WR, Hasar%,
-     CC sn ya da kanıtlanmış ikili)
-   - Combo: numaralı adımlar ve takım savaşında söylenecek tek satırlık **sesli komut**
-     (ör. "Amumu R → Lux R → MF R")
-   - İlk 15 dakika: hangi koridor öncelikli, jungle hangi tarafa oynar, ilk objektif planı
-   - Takım savaşı planı ve güç zamanı (erken / orta / geç)
-   - Zayıf yönler ve en fazla 3 ban önerisi
-   - Yedek pickler: kilit şampiyon banlanırsa oyuncu → yedek şampiyon
-3. **Draft planı:** ilk turda combo'yu belli etmeyen pickler, son pickler, rakip şunu alırsa hangi
-   comp'a geçilir.
-4. **Bu akşamın önerisi:** hangi comp'la başlamalıyız ve neden (tek paragraf).
-5. **Antrenman:** Esneme ya da uzun süredir oynanmayan picklerden kim neyi önce normal maçta denemeli.
-6. **Belirsizlikler:** emin olmadığın şampiyon, etkileşim ya da eksik veri varsa soru olarak listele.
+1. **Çekirdek tablosu**, en güçlüden başlayarak:
+   | # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Not |
+   - Tip: Sağlam / Deneysel
+   - Çekirdek: "Oyuncu Şampiyon (Rol)" + ... (ör. "civaHg Amumu (Jg) + Ali MF (Sup) + Lao Jhin (ADC)")
+   - Sesli komut: ulti sırası tek satır (ör. "Amumu R → Jhin W → MF R")
+   - Serbest slotlar: çekirdek dışındaki roller; çekirdeği belirgin güçlendiren biri varsa
+     "isteğe bağlı: Oyuncu Şampiyon"
+   - Not: en fazla ~10 kelime, veriden kanıt ya da risk (ör. "ikili 14 maç %71", "Brand pas riski")
+2. **Öne çıkanlar** (en fazla 3 madde, tek cümle): bu akşam ilk denenecek çekirdek ve neden.
+3. **Ortak banlar** (tek satır, en fazla 3 şampiyon): çekirdeklerin çoğunu bozanlar.
+4. **Belirsizlikler**: yalnızca varsa, tek satır.
 
-Draft sırasında rakip pickleri yazarsak comp'u onlara göre uyarlamaya hazır ol.
+Bir çekirdeğin numarasını yazarsak o zaman ayrıntı ver: tam kadro, combo sırası, ilk 15 dakika,
+draft sırası, yedek pickler. Draft sırasında rakip pickleri yazarsak öneriyi onlara göre daralt.
 """
-    return text
 
 
 def _pct(x):

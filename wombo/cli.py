@@ -201,7 +201,7 @@ def main(argv=None):
     p.add_argument("profiller", nargs="+")
     p.add_argument("-o", "--cikti", help="Brief'i dosyaya yaz")
     p.add_argument("--mod", choices=list(MODES), default="karma",
-                   help="karma: 2 sağlam + 1 deneysel (varsayılan), klasik, deneysel")
+                   help="karma: ⅓ deneysel (varsayılan), klasik: hepsi sağlam, deneysel: çoğu deneysel")
     p.set_defaults(func=cmd_team)
 
     args = parser.parse_args(argv)

@@ -33,9 +33,9 @@ Windows'ta `baslat.bat` dosyasına çift tıklamak da aynı işi görür. Taray�
    - Smurf hesap ekle.
    - Havuza elle şampiyon ekle (ör. "Wukong, eski main").
 5. 5 kişiyi **Takıma ekle**, Brief düğmesinin yanından modu seç, **Brief oluştur** → **Kopyala** → Claude ile olan sohbete yapıştır. Claude API anahtarı gerekmez.
-   - **2 sağlam + 1 deneysel** (varsayılan)
-   - **3 sağlam**
-   - **3 deneysel (troll ama güçlü):** meta ve lane kalıbı dışı fikirler (iki AP bot, ADC'siz comp, mid'de support vb.)
+   - **Karışık** (varsayılan): yaklaşık üçte biri deneysel
+   - **Hepsi sağlam**
+   - **Çoğu deneysel (troll ama güçlü):** meta ve lane kalıbı dışı fikirler (iki AP bot, ADC'siz diziliş, mid'de support vb.)
 
 Üstteki **100/200/300 maç** seçimi hesap başına ne kadar geçmiş çekileceğini belirler. Daha derin geçmiş daha çok şampiyon ve kanıtlanmış ikili demek, ama daha uzun sürer.
 
@@ -50,13 +50,15 @@ Brief'te her oyuncu için şunlar yer alır:
 Brief önce veriyi, en sonda kuralları ve çıktı formatını verir. Kurallar şunları içerir:
 - Mekanik doğrulama: ör. Yasuo R için havaya kaldırma şart; kanallı ultiler korunmalı
 - Az maçlı winrate'e güvenmeme
-- Comp çeşitliliği ve tek bir main'e bağımlılığın sorgulanması
+- Çeşitlilik ve tek bir main'e bağımlılığın sorgulanması
 
-İstenen çıktı:
-- En üstte özet tablo
-- Her comp için veriden kanıt, sesli iletişim komutu ve ilk 15 dakika planı
-- Draft planı ve "bu akşamın önerisi"
-- Antrenman listesi ve belirsizlikler
+İstenen çıktı kısa ve özdür: tam 5'li comp yerine **10-20 wombo çekirdeği**. Çekirdek, ultileri birbirine zincirlenen 2-5 kişilik (çoğunlukla 3-4) bir gruptur; kalan oyuncular serbesttir ya da isteğe bağlı bir öneri alır. Her çekirdek tek bir tablo satırıdır:
+
+| # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Not |
+|---|---|---|---|---|---|
+| 1 | Sağlam | civaHg Amumu (Jg) + Ali MF (Sup) + Lao Jhin (ADC) | Amumu R → Jhin W → MF R | Top, Mid (isteğe bağlı: Joni Kennen) | ikili 14 maç %71 |
+
+Tablonun altında yalnızca öne çıkanlar (en fazla 3 madde), ortak banlar ve varsa belirsizlikler gelir. Bir çekirdeğin ayrıntısını (tam kadro, ilk 15 dakika, draft sırası, yedekler) istemek için numarasını yazman yeterli.
 
 Anahtar `data/riot_key.txt` dosyasında, veriler `data/wombo.db` dosyasında durur. `data/` klasörü git'e girmez.
 

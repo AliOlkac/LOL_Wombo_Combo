@@ -455,10 +455,11 @@ class BriefModeTest(unittest.TestCase):
         return service.team_brief(self.store, [self.store.profile(i) for i in self.ids], mode)
 
     def test_modes(self):
-        self.assertIn("**üçüncüsü deneysel**", self.brief("karma"))
-        self.assertIn("## Deneysel comp ne demek", self.brief("karma"))
+        self.assertIn("Yaklaşık üçte biri **deneysel** olsun.", self.brief("karma"))
+        self.assertIn("## Deneysel çekirdek ne demek", self.brief("karma"))
         klasik = self.brief("klasik")
-        self.assertNotIn("Deneysel comp ne demek", klasik)
+        self.assertNotIn("Deneysel çekirdek ne demek", klasik)
+        self.assertIn("Hepsi sağlam olsun.", klasik)
         self.assertIn("en fazla bir Esneme", klasik)
         self.assertIn("en fazla iki Esneme", self.brief("deneysel"))
         with self.assertRaises(ValueError):
@@ -492,11 +493,13 @@ class StrongerPromptTest(unittest.TestCase):
         self.assertEqual(order, sorted(order))
         self.assertIn("yama 15.1.1", text)
         self.assertIn("**Esnek** = en az 8 Main/Oynayabilir şampiyonu olan oyuncu", text)
-        exp = text.index("## Deneysel comp ne demek")
+        exp = text.index("## Deneysel çekirdek ne demek")
         self.assertTrue(text.index("# Kurallar") < exp < text.index("# İstenen çıktı"))
         for must in ("Yasuo R yalnızca havaya kalkmış", "5 maçtan az winrate'i kanıt sayma",
-                     "en az bir comp'u o şampiyon olmadan kur", "**Bu akşamın önerisi:**", "sesli komut",
-                     "**Belirsizlikler:**"):
+                     "**10-20 wombo çekirdeği**", "Tam 5'li comp kurmak zorunda değilsin", "**kısa ve öz**",
+                     "| # | Tip | Çekirdek | Sesli komut | Serbest slotlar | Not |", "isteğe bağlı: Oyuncu Şampiyon",
+                     "en az\n  üçte biri o şampiyon olmadan", "**Öne çıkanlar**", "**Ortak banlar**",
+                     "Bir çekirdeğin numarasını yazarsak o zaman ayrıntı ver"):
             self.assertIn(must, text)
 
     def test_role_matrix(self):
@@ -701,7 +704,7 @@ class WebApiTest(unittest.TestCase):
     def test_brief_mode_and_depth_validation(self):
         code, r = self.call("POST", "/api/brief", {"profile_ids": self.ids, "mode": "deneysel"})
         self.assertEqual(code, 200)
-        self.assertIn("3 farklı **deneysel** wombo comp", r["text"])
+        self.assertIn("Çoğu **deneysel** olsun", r["text"])
         code, err = self.call("POST", "/api/brief", {"profile_ids": self.ids, "mode": "x"})
         self.assertEqual(code, 400)
         with mock.patch.object(service, "load_api_key", lambda key_file=None: FAKE_KEY):
