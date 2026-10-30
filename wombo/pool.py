@@ -1,4 +1,5 @@
 """Oyuncu başına şampiyon havuzu ve rahatlık skoru."""
+import json
 import math
 import time
 from collections import Counter
@@ -8,6 +9,34 @@ from .store import _norm
 
 # Sihirdar Vadisi kuyrukları: normal draft, solo/duo, blind, flex, quickplay, clash
 SR_QUEUES = {400, 420, 430, 440, 490, 700}
+ARAM_QUEUES = {450}
+
+
+class StatAverager:
+    """Maç başı istatistiklerin ortalaması (her alan kendi örnek sayısıyla)."""
+
+    def __init__(self):
+        self.sums = {}
+        self.counts = {}
+
+    def add(self, stats):
+        for key, value in (stats or {}).items():
+            self.sums[key] = self.sums.get(key, 0) + value
+            self.counts[key] = self.counts.get(key, 0) + 1
+
+    def averages(self):
+        return {k: self.sums[k] / self.counts[k] for k in self.sums}
+
+
+def _row_stats(row):
+    """Maç satırındaki JSON istatistikler (sütun yoksa ya da boşsa None)."""
+    try:
+        raw = row["stats"]
+    except (KeyError, IndexError):
+        return None
+    if isinstance(raw, dict):
+        return raw
+    return json.loads(raw) if raw else None
 
 MAIN, PLAYABLE, STRETCH = "Main", "Oynayabilir", "Esneme"
 TIER_ORDER = {MAIN: 0, PLAYABLE: 1, STRETCH: 2}
@@ -56,6 +85,7 @@ class ChampStat:
     note: str = None
     score: float = 0.0
     tier: str = None
+    style: StatAverager = field(default_factory=StatAverager)
 
     @property
     def winrate(self):
@@ -117,6 +147,8 @@ class PlayerPool:
     preferred_roles: list = field(default_factory=list)
     avoided_roles: list = field(default_factory=list)
     note: str = ""
+    style: dict = field(default_factory=dict)   # SR maç başı ortalamalar (hasar payı, CC süresi...)
+    aram: list = field(default_factory=list)    # [(şampiyon, maç)] — havuza sayılmaz
 
     @property
     def breadth(self):
@@ -140,10 +172,17 @@ def build_pool(match_rows, mastery_rows, extra_rows, name="", riot_ids=(), prefe
         return stats[key]
 
     roles = Counter()
+    overall = StatAverager()
+    aram = Counter()
     for m in match_rows:
+        if m["queue_id"] in ARAM_QUEUES:
+            aram[m["champion"]] += 1
         if m["queue_id"] not in SR_QUEUES:
             continue
         s = get(m["champion"])
+        match_stats = _row_stats(m)
+        s.style.add(match_stats)
+        overall.add(match_stats)
         s.games += 1
         s.wins += m["win"]
         s.kills += m["kills"]
@@ -176,4 +215,5 @@ def build_pool(match_rows, mastery_rows, extra_rows, name="", riot_ids=(), prefe
     role_share = {pos: n / total for pos, n in roles.most_common()} if total else {}
     sr_games = sum(1 for m in match_rows if m["queue_id"] in SR_QUEUES)
     return PlayerPool(name, list(riot_ids), champions, role_share, sr_games,
-                      list(preferred_roles), list(avoided_roles), note or "")
+                      list(preferred_roles), list(avoided_roles), note or "",
+                      style=overall.averages(), aram=aram.most_common())

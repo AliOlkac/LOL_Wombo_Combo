@@ -189,6 +189,12 @@ details[open] summary { margin-bottom: 4px; }
     <div class="logo">WOMBO<span>·</span>COMBO</div>
     <div class="spacer"></div>
     <button class="chip" id="keyChip" title="Riot API anahtarı"><span class="dot"></span><span>Anahtar</span></button>
+    <select id="depth" aria-label="Hesap başına kaç maç çekilsin"
+      title="Hesap başına kaç maç çekilsin. Daha derin = daha çok şampiyon ve ikili, ama daha uzun sürer (100 maç ≈ 2 dk).">
+      <option value="100">100 maç</option>
+      <option value="200">200 maç</option>
+      <option value="300">300 maç</option>
+    </select>
     <button id="updateAll">Herkesi güncelle</button>
   </div>
   <div class="job" id="job">
@@ -222,6 +228,11 @@ details[open] summary { margin-bottom: 4px; }
     <div class="slots" id="slots"></div>
     <div class="spacer"></div>
     <button class="ghost" id="clearTeam">Temizle</button>
+    <select id="mode" aria-label="Brief modu" title="Claude'dan nasıl comp'lar isteyelim">
+      <option value="karma">2 sağlam + 1 deneysel</option>
+      <option value="klasik">3 sağlam</option>
+      <option value="deneysel">3 deneysel (troll ama güçlü)</option>
+    </select>
     <button class="primary" id="makeBrief" disabled>Brief oluştur</button>
   </div>
 </div>
@@ -286,6 +297,16 @@ let detail = null;
 let pollTimer = null;
 let selected = [];
 let friendMin = 3;
+
+// Derinlik ve brief modu tarayıcıda hatırlanır
+function remember(id, key) {
+  const el = $(`#${id}`);
+  try { const v = localStorage.getItem(key); if (v && [...el.options].some(o => o.value === v)) el.value = v; } catch (e) {}
+  el.addEventListener("change", () => { try { localStorage.setItem(key, el.value); } catch (e) {} });
+}
+remember("depth", "wombo.depth");
+remember("mode", "wombo.mode");
+const depth = () => Number($("#depth").value);
 let keyTest = null;  // son anahtar testi: {key_ok, key_message} ya da null
 try { selected = JSON.parse(localStorage.getItem("wombo.team") || "[]"); } catch (e) {}
 
@@ -551,7 +572,7 @@ function followJob(job) {
 
 async function startUpdate(profileIds) {
   await run(async () => {
-    state.job = await api("POST", "/api/update", { profile_ids: profileIds });
+    state.job = await api("POST", "/api/update", { profile_ids: profileIds, max_matches: depth() });
     renderJob(state.job);
     startPolling();
   });
@@ -694,14 +715,14 @@ document.addEventListener("submit", e => {
   const data = Object.fromEntries(new FormData(f));
   if (f.dataset.friend) {
     run(async () => {
-      const r = await api("POST", "/api/friends", { puuid: f.dataset.friend, name: data.name, profile_id: data.profile_id });
+      const r = await api("POST", "/api/friends", { puuid: f.dataset.friend, name: data.name, profile_id: data.profile_id, max_matches: depth() });
       toast(`${r.riot_id} eklendi, verisi çekiliyor.`);
       await load();
       followJob(r.job);
     });
   } else if (f.id === "addAccount") {
     submitForm(f, async () => {
-      const r = await api("POST", `/api/profiles/${detail.id}/accounts`, data);
+      const r = await api("POST", `/api/profiles/${detail.id}/accounts`, { ...data, max_matches: depth() });
       toast(`${r.riot_id} eklendi, verisi çekiliyor.`);
       await load();
       followJob(r.job);
@@ -715,7 +736,7 @@ document.addEventListener("submit", e => {
     }, "Ekleniyor…");
   } else if (f.id === "newProfile") {
     submitForm(f, async () => {
-      const r = await api("POST", "/api/profiles", data);
+      const r = await api("POST", "/api/profiles", { ...data, max_matches: depth() });
       f.reset();
       await load();
       followJob(r.job);
@@ -811,7 +832,7 @@ $("#copyDiag").addEventListener("click", async () => {
   toast("Rapor kopyalandı.");
 });
 $("#makeBrief").addEventListener("click", () => run(async () => {
-  const { text } = await api("POST", "/api/brief", { profile_ids: selected });
+  const { text } = await api("POST", "/api/brief", { profile_ids: selected, mode: $("#mode").value });
   $("#briefText").value = text;
   $("#briefModal").classList.add("show");
   $("#overlay").classList.add("show");

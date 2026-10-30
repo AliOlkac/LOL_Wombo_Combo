@@ -7,15 +7,46 @@ MAX_CHAMPS = 25       # oyuncu başına brief'e girecek en fazla şampiyon
 MAX_DUOS = 15         # brief'e girecek en fazla şampiyon ikilisi
 MAX_GROUP_GAMES = 8   # en az 3 kişiyle oynanmış son maçlardan kaç tanesi listelensin
 
-INSTRUCTIONS = f"""\
+MODES = {
+    "karma": "2 sağlam + 1 deneysel",
+    "klasik": "3 sağlam",
+    "deneysel": "3 deneysel (troll görünen ama güçlü)",
+}
+
+EXPERIMENTAL = """
+## Deneysel comp ne demek
+Lane ve meta kalıplarına sıkışma. "Troll görünür ama mekanik olarak tutarlı" fikirler istiyoruz:
+iki AP bot, ADC'siz comp, iki support, mid'de ADC ya da support şampiyonu, top'ta ranged ya da
+support şampiyonu, erken 5'li baskın, funnel, lane swap gibi. Şampiyonlar yine havuzdan gelir
+(Esnek oyunculara işaretli havuz dışı öneri serbest; ARAM'da sık oynadıkları da aday olabilir).
+Her deneysel comp için yaz:
+- Neden işe yarar, rakip neyi beklemez
+- Hangi rakip comp'a karşı açılmamalı
+- Oyuncu bu şampiyonu bu rolde daha önce oynamış mı (Roller sütunu), oynamadıysa riski
+Oyun tarzı satırlarını (hasar payı, alınan hasar, CC süresi, solo kill) kimin taşıyıcı, kimin
+ön saf/engage olabileceğine karar verirken kullan.
+"""
+
+
+def instructions(mode="karma"):
+    if mode not in MODES:
+        raise ValueError(f"Bilinmeyen mod: {mode}. Seçenekler: {', '.join(MODES)}")
+    stretch_limit = "iki" if mode == "deneysel" else "bir"
+    if mode == "klasik":
+        task = "3 farklı sağlam wombo comp kur."
+    elif mode == "karma":
+        task = "3 farklı wombo comp kur: ilk ikisi sağlam, **üçüncüsü deneysel** (aşağıya bak)."
+    else:
+        task = "3 farklı **deneysel** wombo comp kur (aşağıya bak)."
+    text = f"""\
 Sen bir League of Legends koçusun. Aşağıda 5 kişilik premade takımımızın gerçek
 maç geçmişinden çıkarılmış şampiyon havuzları var. Bu 5 kişiyle oynanabilecek
 **wombo combo** takımları kur: takım savaşında üst üste binen AoE engage,
-knockup/çekme ve AoE hasar ultilerinden oluşan diziliş.
+knockup/çekme ve AoE hasar ultilerinden oluşan diziliş. {task}
 
 ## Kurallar
 - Her oyuncuya yalnızca **kendi havuzundaki** şampiyonlardan ver.
-  Tercih sırası: {MAIN} > {PLAYABLE} > {STRETCH}. Comp başına en fazla bir {STRETCH} pick olsun.
+  Tercih sırası: {MAIN} > {PLAYABLE} > {STRETCH}. Comp başına en fazla {stretch_limit} {STRETCH} pick olsun.
 - Her rol (Top, Jungle, Mid, ADC, Support) bir kez. **Meta rol kalıplarına takılma:** tablodaki
   "Roller" sütunu oyuncunun o şampiyonu gerçekte hangi rolde kaç maç oynadığını gösterir
   (ör. Kai'Sa Mid, Miss Fortune Support). Şampiyonu oyuncunun oynadığı rolde değerlendir;
@@ -28,9 +59,11 @@ knockup/çekme ve AoE hasar ultilerinden oluşan diziliş.
   Çok maçlı ve yüksek winrate'li ikililer kanıtlanmış silahlarımızdır: en az bir comp'u bunlardan
   birinin etrafına kur ve onu daha da güçlendirecek (engage, AoE, koruma) parçaları ekle.
   2-3 maçlık ikililere fazla güvenme.
+- "Hasar%" takım hasarındaki payı, "CC sn" maç başı rakibi kontrol ettiği süreyi gösterir;
+  kimin taşıdığını, kimin engage yaptığını bunlardan da oku.
 
 ## İstenen çıktı
-3 farklı wombo comp. Her biri için:
+Her comp için:
 1. Oyuncu → rol → şampiyon (havuz seviyesi)
 2. Combo nasıl işliyor: kim açar, ultiler hangi sırayla basılır
 3. Kazanma planı ve güç zamanı (erken / orta / geç oyun)
@@ -39,6 +72,9 @@ knockup/çekme ve AoE hasar ultilerinden oluşan diziliş.
 
 En sonda draftta hangi sırayla pick yapılması gerektiğini (combo'yu erken belli etmeden) kısaca öner.
 """
+    if mode != "klasik":
+        text += EXPERIMENTAL
+    return text
 
 
 def _champ_role(champ_names, champion, position):
@@ -85,6 +121,26 @@ def _roles(roles):
     return ", ".join(POSITION_NAMES.get(r, r) for r in roles)
 
 
+def style_line(style):
+    """Oyuncunun SR maç başı ortalamalarını tek satırda anlatır."""
+    parts = []
+    if "dmg_share" in style:
+        parts.append(f"takım hasarının {_pct(style['dmg_share'])}'i")
+    if "taken_share" in style:
+        parts.append(f"alınan hasarın {_pct(style['taken_share'])}'i")
+    if "cc_time" in style:
+        parts.append(f"{style['cc_time']:.0f} sn CC")
+    if "kp" in style:
+        parts.append(f"KP {_pct(style['kp'])}")
+    if "solo_kills" in style:
+        parts.append(f"{style['solo_kills']:.1f} solo kill")
+    if "cs_pm" in style:
+        parts.append(f"{style['cs_pm']:.1f} CS/dk")
+    if "vision_pm" in style:
+        parts.append(f"{style['vision_pm']:.1f} görüş/dk")
+    return " · ".join(parts)
+
+
 def player_section(pool, names):
     title = f"### {pool.name}"
     if pool.riot_ids:
@@ -99,12 +155,18 @@ def player_section(pool, names):
         lines.append(f"Oynamaz: {_roles(pool.avoided_roles)}")
     if pool.note:
         lines.append(f"Not: {pool.note}")
+    style = style_line(pool.style)
+    if style:
+        lines.append(f"Oyun tarzı (SR maç başı ortalama): {style}")
+    aram = [f"{names.get(_norm(c), c)} {n}" for c, n in pool.aram if n >= 2][:10]
+    if aram:
+        lines.append(f"ARAM'da oynadıkları (havuza sayılmaz, deneysel fikir için): {', '.join(aram)}")
     lines.append("")
     if not pool.champions:
         lines.append("_Havuz boş: maç verisi yok._")
         return "\n".join(lines)
-    lines += ["| Şampiyon | Seviye | Maç | WR | KDA | Roller | Mastery | Not |",
-              "|---|---|---|---|---|---|---|---|"]
+    lines += ["| Şampiyon | Seviye | Maç | WR | KDA | Roller | Hasar% | CC sn | Mastery | Not |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
     for c in pool.champions[:MAX_CHAMPS]:
         name = names.get(_norm(c.champion), c.champion)
         pos = ", ".join(f"{POSITION_NAMES.get(p, p)} {n}" for p, n in c.positions.most_common(3)) or "-"
@@ -114,13 +176,16 @@ def player_section(pool, names):
             wr = kda = "-"
         mastery = f"{c.mastery_points // 1000}k" if c.mastery_points else "-"
         note = c.note or ("elle eklendi" if c.extra_tier else "")
-        lines.append(f"| {name} | {c.tier} | {c.games} | {wr} | {kda} | {pos} | {mastery} | {note} |")
+        avg = c.style.averages()
+        dmg = _pct(avg["dmg_share"]) if "dmg_share" in avg else "-"
+        cc = f"{avg['cc_time']:.0f}" if "cc_time" in avg else "-"
+        lines.append(f"| {name} | {c.tier} | {c.games} | {wr} | {kda} | {pos} | {dmg} | {cc} | {mastery} | {note} |")
     return "\n".join(lines)
 
 
-def build_prompt(pools, names, shared=None, profile_names=None):
-    """shared: synergy.shared_matches çıktısı; profile_names: profil id -> ad."""
-    parts = [INSTRUCTIONS, "## Oyuncular", ""]
+def build_prompt(pools, names, shared=None, profile_names=None, mode="karma"):
+    """shared: synergy.shared_matches çıktısı; profile_names: profil id -> ad; mode: MODES anahtarı."""
+    parts = [instructions(mode), "## Oyuncular", ""]
     parts += [player_section(p, names) + "\n" for p in pools]
     if shared is not None:
         parts.append(synergy_section(shared, profile_names, names))

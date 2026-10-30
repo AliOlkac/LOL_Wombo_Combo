@@ -19,6 +19,8 @@ from .riot import RiotAuthError, RiotError
 from .store import Store, _norm
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
+DEFAULT_DEPTH = 100
+DEPTHS = (100, 200, 300)  # hesap başına çekilecek maç sayısı seçenekleri
 
 
 class UpdateJob:
@@ -35,7 +37,7 @@ class UpdateJob:
         # waiting: işlenmeyi bekleyen profil id'leri (ilk eleman = şu an işlenen)
         return {"running": running, "message": "", "account": "", "profile_id": None,
                 "done": 0, "total": 0, "completed": 0, "waiting": [], "errors": [],
-                "finished_at": None}
+                "finished_at": None, "max_matches": DEFAULT_DEPTH}
 
     def snapshot(self):
         with self.lock:
@@ -51,17 +53,20 @@ class UpdateJob:
         with self.lock:
             self.state["errors"].append(text)
 
-    def start(self, profile_ids):
-        """Profilleri sıraya ekler; iş çalışmıyorsa başlatır."""
+    def start(self, profile_ids, max_matches=None):
+        """Profilleri sıraya ekler; iş çalışmıyorsa başlatır. max_matches: hesap başına maç derinliği."""
+        depth = max_matches or DEFAULT_DEPTH
         with self.lock:
             if self.state["running"]:
                 # şu an işlenen profil tekrar istendiyse (ör. yeni hesap eklendi) sona yeniden eklenir
                 queued = self.state["waiting"][1:]
                 self.state["waiting"] += [i for i in dict.fromkeys(profile_ids) if i not in queued]
+                self.state["max_matches"] = max(self.state["max_matches"], depth)
                 return
             self.state = self._fresh(running=True)
             self.state["message"] = "Başlıyor"
             self.state["waiting"] = list(dict.fromkeys(profile_ids))
+            self.state["max_matches"] = depth
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
@@ -84,7 +89,7 @@ class UpdateJob:
                               done=0, total=0, message="Maç listesi alınıyor")
                     try:
                         service.update_account(
-                            client, store, acc,
+                            client, store, acc, max_matches=self.snapshot()["max_matches"],
                             progress=lambda d, t: self._set(done=d, total=t, message="Maçlar indiriliyor"))
                     except RiotAuthError:
                         raise
@@ -105,7 +110,8 @@ class UpdateJob:
 def queue_update(h, profile_id):
     """Hesap eklendikten sonra o profilin verisini otomatik çekmeye başlar."""
     if service.load_api_key():
-        h.server.job.start([profile_id])
+        depth = int(h.body().get("max_matches") or DEFAULT_DEPTH)
+        h.server.job.start([profile_id], depth if depth in DEPTHS else DEFAULT_DEPTH)
     return h.server.job.snapshot()
 
 
@@ -244,10 +250,14 @@ def api_add_friend(h, store):
 
 
 def api_start_update(h, store):
-    ids = [int(i) for i in h.body().get("profile_ids") or []] or [p["id"] for p in store.profiles()]
+    data = h.body()
+    ids = [int(i) for i in data.get("profile_ids") or []] or [p["id"] for p in store.profiles()]
+    depth = int(data.get("max_matches") or DEFAULT_DEPTH)
+    if depth not in DEPTHS:
+        raise ValueError(f"Maç derinliği {', '.join(map(str, DEPTHS))} olabilir.")
     if not service.load_api_key():
         raise ValueError("Önce Riot API anahtarını kaydet.")
-    h.server.job.start(ids)
+    h.server.job.start(ids, depth)
     return h.server.job.snapshot()
 
 
@@ -259,7 +269,8 @@ def api_brief(h, store):
     ids = [int(i) for i in h.body().get("profile_ids") or []]
     if len(ids) != 5 or len(set(ids)) != 5:
         raise ValueError("Brief için tam 5 farklı profil seç.")
-    return {"text": service.team_brief(store, [store.profile(i) for i in ids])}
+    mode = h.body().get("mode") or "karma"
+    return {"text": service.team_brief(store, [store.profile(i) for i in ids], mode)}
 
 
 def api_save_key(h, store):

@@ -376,6 +376,96 @@ class SynergyTest(unittest.TestCase):
         self.assertIn("Meta rol kalıplarına takılma", text)
 
 
+class DetailedDataTest(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+        self.addCleanup(self.store.close)
+        self.pid = self.store.create_profile("Ali")
+        self.store.add_account("me", "Oqila#4310", self.pid)
+
+    def test_extract_stats(self):
+        p = {"timeCCingOthers": 31, "totalMinionsKilled": 150, "neutralMinionsKilled": 30,
+             "challenges": {"teamDamagePercentage": 0.312, "damageTakenOnTeamPercentage": 0.15,
+                            "killParticipation": 0.6, "soloKills": 2, "visionScorePerMinute": 0.8}}
+        stats = service.extract_stats(p, {"gameDuration": 1800})
+        self.assertEqual(stats, {"dmg_share": 0.312, "taken_share": 0.15, "kp": 0.6, "cc_time": 31,
+                                 "solo_kills": 2, "cs_pm": 6.0, "vision_pm": 0.8})
+
+    def test_old_database_gets_stats_column(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "old.db")
+            db = sqlite3.connect(path)
+            db.execute("CREATE TABLE matches (match_id TEXT, puuid TEXT, champion TEXT, position TEXT, "
+                       "kills INTEGER, deaths INTEGER, assists INTEGER, win INTEGER, game_creation INTEGER, "
+                       "queue_id INTEGER, PRIMARY KEY (match_id, puuid))")
+            db.execute("INSERT INTO matches VALUES ('m1', 'x', 'Ahri', 'MIDDLE', 1, 1, 1, 1, 0, 420)")
+            db.commit()
+            db.close()
+            store = Store(path)
+            self.assertEqual(store.matches_missing_stats("x", [420]), ["m1"])
+            store.close()
+
+    def test_deeper_update_reaches_older_matches_and_backfills_stats(self):
+        matches = {f"TR1_{i}": [participant("me", "Oqila#4310", 100, True)] for i in range(250)}
+        client = FakeClient(matches)
+        calls = []
+        client.match = lambda mid, orig=client.match: calls.append(mid) or orig(mid)
+        # bu özellikten önce indirilmiş, istatistiksiz bir maç
+        self.store.add_match("TR1_0", "me", "Ahri", "MIDDLE", 1, 1, 1, True, NOW, 420)
+        acc = self.store.accounts(self.pid)[0]
+
+        service.update_account(client, self.store, acc, max_matches=100)
+        self.assertEqual(len(self.store.known_match_ids("me")), 100)
+        self.assertEqual(len(calls), 100)  # 99 yeni + istatistiği eksik TR1_0
+        self.assertEqual(self.store.matches_missing_stats("me", [420]), [])
+
+        calls.clear()
+        service.update_account(client, self.store, acc, max_matches=300)
+        self.assertEqual(len(self.store.known_match_ids("me")), 250)  # ilk sayfa bilinse de devam etti
+        self.assertEqual(len(calls), 150)
+
+    def test_pool_style_and_aram(self):
+        rows = [dict(match("Jhin", True, pos="BOTTOM"), stats=json.dumps({"dmg_share": 0.3, "cc_time": 10})),
+                dict(match("Jhin", False, pos="BOTTOM"), stats=json.dumps({"dmg_share": 0.2, "cc_time": 20})),
+                dict(match("Seraphine", True, queue=450), stats=None),
+                dict(match("Seraphine", True, queue=450), stats=None)]
+        pool = build_pool(rows, [{"champion": "Jhin", "points": 200_000, "level": 7}], [], now_ms=NOW)
+        self.assertAlmostEqual(pool.style["dmg_share"], 0.25)
+        self.assertEqual(pool.aram, [("Seraphine", 2)])
+        self.assertAlmostEqual(pool.champions[0].style.averages()["cc_time"], 15)
+
+
+class BriefModeTest(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+        self.addCleanup(self.store.close)
+        self.ids = seed_team(self.store)
+
+    def brief(self, mode):
+        return service.team_brief(self.store, [self.store.profile(i) for i in self.ids], mode)
+
+    def test_modes(self):
+        self.assertIn("**üçüncüsü deneysel**", self.brief("karma"))
+        self.assertIn("## Deneysel comp ne demek", self.brief("karma"))
+        klasik = self.brief("klasik")
+        self.assertNotIn("Deneysel comp ne demek", klasik)
+        self.assertIn("en fazla bir Esneme", klasik)
+        self.assertIn("en fazla iki Esneme", self.brief("deneysel"))
+        with self.assertRaises(ValueError):
+            self.brief("troll")
+
+    def test_style_columns_and_aram_line(self):
+        self.store.add_match("x1", "p1", "Ahri", "MIDDLE", 5, 2, 8, True, NOW, 420,
+                             {"dmg_share": 0.31, "cc_time": 12.0, "kp": 0.5})
+        for i in range(3):
+            self.store.add_match(f"ar{i}", "p1", "Seraphine", None, 1, 1, 1, True, NOW, 450)
+        text = self.brief("karma")
+        self.assertIn("| Hasar% | CC sn |", text)
+        self.assertIn("Oyun tarzı (SR maç başı ortalama): takım hasarının %31'i · 12 sn CC · KP %50", text)
+        self.assertIn("ARAM'da oynadıkları (havuza sayılmaz, deneysel fikir için): Seraphine 3", text)
+
+
 class RateLimiterTest(unittest.TestCase):
     def test_waits_when_window_full(self):
         t = [0.0]
@@ -539,6 +629,17 @@ class WebApiTest(unittest.TestCase):
         job.start([2, 3, 3, 1])  # 1 şu an işleniyor: tekrar sona eklenir; 2 zaten sırada
         self.assertEqual(job.snapshot()["waiting"], [1, 2, 3, 1])
         self.assertEqual(job.snapshot()["count"], 4)
+
+    def test_brief_mode_and_depth_validation(self):
+        code, r = self.call("POST", "/api/brief", {"profile_ids": self.ids, "mode": "deneysel"})
+        self.assertEqual(code, 200)
+        self.assertIn("3 farklı **deneysel** wombo comp", r["text"])
+        code, err = self.call("POST", "/api/brief", {"profile_ids": self.ids, "mode": "x"})
+        self.assertEqual(code, 400)
+        with mock.patch.object(service, "load_api_key", lambda key_file=None: FAKE_KEY):
+            code, err = self.call("POST", "/api/update", {"max_matches": 5000})
+        self.assertEqual(code, 400)
+        self.assertIn("derinliği", err["error"])
 
     def test_non_json_post_is_rejected(self):
         code, _ = self.call("POST", "/api/profiles", {"name": "X"}, content_type="text/plain")

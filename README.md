@@ -32,7 +32,18 @@ Windows'ta `baslat.bat` dosyasına çift tıklamak da aynı işi görür. Taray�
    - Not yaz (ör. "tank sever").
    - Smurf hesap ekle.
    - Havuza elle şampiyon ekle (ör. "Wukong, eski main").
-5. 5 kişiyi **Takıma ekle** → **Brief oluştur** → **Kopyala** → Claude ile olan sohbete yapıştır. Claude API anahtarı gerekmez.
+5. 5 kişiyi **Takıma ekle**, Brief düğmesinin yanından modu seç, **Brief oluştur** → **Kopyala** → Claude ile olan sohbete yapıştır. Claude API anahtarı gerekmez.
+   - **2 sağlam + 1 deneysel** (varsayılan)
+   - **3 sağlam**
+   - **3 deneysel (troll ama güçlü):** meta ve lane kalıbı dışı fikirler (iki AP bot, ADC'siz comp, mid'de support vb.)
+
+Üstteki **100/200/300 maç** seçimi hesap başına ne kadar geçmiş çekileceğini belirler. Daha derin geçmiş daha çok şampiyon ve kanıtlanmış ikili demek, ama daha uzun sürer.
+
+Brief'te her oyuncu için şunlar yer alır:
+- Şampiyon havuzu: her şampiyonun hangi rolde kaç maç oynandığı, takım hasarındaki payı (Hasar%) ve maç başı CC süresi
+- Oyun tarzı özeti: hasar payı, alınan hasar payı, CC süresi, kill katılımı, solo kill, CS/dk, görüş/dk
+- ARAM'da sık oynadığı şampiyonlar (havuza sayılmaz, deneysel fikirler için)
+- Seçili oyuncuların birlikte oynadığı maçlardan kanıtlanmış ikililer (ör. "Ali Miss Fortune (Support) + Lao Jhin (ADC): 14 maç, %71")
 
 Anahtar `data/riot_key.txt` dosyasında, veriler `data/wombo.db` dosyasında durur. `data/` klasörü git'e girmez.
 
@@ -52,6 +63,8 @@ python -m wombo havuz Ali
 python -m wombo rol Ali --tercih top,jg --oynamaz sup --not "tank sever"
 python -m wombo ekstra Ali Wukong --seviye esneme --not "eski main"
 python -m wombo takim Ali Veli Ayşe Can Ece -o brief.md
+python -m wombo takim Ali Veli Ayşe Can Ece --mod deneysel   # karma | klasik | deneysel
+python -m wombo guncelle --mac 300                            # daha derin geçmiş
 ```
 
 Sunucu varsayılan olarak `tr1`. Değiştirmek için: `python -m wombo --sunucu euw1 ...`
@@ -59,6 +72,9 @@ Sunucu varsayılan olarak `tr1`. Değiştirmek için: `python -m wombo --sunucu 
 ## Veri çekme süresi
 
 Geliştirici anahtarının limiti 2 dakikada 100 istek. Bir hesabın ilk güncellemesi (100 maç) yaklaşık **2 dakika** sürer. 10 arkadaş için ilk tam güncelleme bu yüzden 20-25 dakika sürebilir. Sonraki güncellemelerde yalnızca yeni maçlar indirilir, birkaç saniyede biter.
+
+- **300 maç derinlik:** hesap başına yaklaşık 6 dakika.
+- **Ayrıntılı istatistikler:** Bu özellik eklenmeden önce indirilmiş maçlarda ayrıntılı istatistik (hasar payı, CC süresi...) yok. Bu maçlar bir sonraki güncellemede bir kez yeniden indirilir.
 
 ## Arkadaş keşfi nasıl çalışıyor?
 

@@ -2,6 +2,7 @@
 
 Bir profil bir arkadaşı temsil eder; birden fazla Riot hesabı (smurf) olabilir.
 """
+import json
 import os
 import re
 import sqlite3
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS matches (
     win INTEGER,
     game_creation INTEGER,
     queue_id INTEGER,
+    stats TEXT,                     -- JSON: hasar payı, CC süresi vb. (eski kayıtlarda NULL)
     PRIMARY KEY (match_id, puuid)
 );
 CREATE TABLE IF NOT EXISTS teammates (
@@ -90,6 +92,14 @@ class Store:
         if path != ":memory:":
             self.db.execute("PRAGMA journal_mode = WAL")
         self.db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self):
+        """Eski veritabanlarına sonradan eklenen sütunları ekler."""
+        columns = {r["name"] for r in self.db.execute("PRAGMA table_info(matches)")}
+        if "stats" not in columns:
+            self.db.execute("ALTER TABLE matches ADD COLUMN stats TEXT")
+            self.db.commit()
 
     def close(self):
         self.db.close()
@@ -171,11 +181,19 @@ class Store:
         return {r[0] for r in self.db.execute("SELECT match_id FROM matches WHERE puuid = ?", (puuid,))}
 
     def add_match(self, match_id, puuid, champion, position, kills, deaths, assists, win,
-                  game_creation, queue_id):
+                  game_creation, queue_id, stats=None):
         self.db.execute(
-            "INSERT OR REPLACE INTO matches VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO matches (match_id, puuid, champion, position, kills, deaths, "
+            "assists, win, game_creation, queue_id, stats) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (match_id, puuid, champion, position, kills, deaths, assists, int(win),
-             game_creation, queue_id))
+             game_creation, queue_id, json.dumps(stats) if stats else None))
+
+    def matches_missing_stats(self, puuid, queues):
+        """Ayrıntılı istatistiği olmayan (bu özellikten önce indirilmiş) maçlar."""
+        ph = ",".join("?" * len(queues))
+        return [r[0] for r in self.db.execute(
+            f"SELECT match_id FROM matches WHERE puuid = ? AND stats IS NULL AND queue_id IN ({ph}) "
+            "ORDER BY game_creation DESC", (puuid, *queues))]
 
     def profile_matches(self, profile_id):
         return self.db.execute(

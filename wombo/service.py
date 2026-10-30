@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.request
 from urllib.error import HTTPError
 
-from .pool import build_pool
+from .pool import SR_QUEUES, build_pool
 from .prompt import build_prompt
 from .riot import (PLATFORM_TO_REGION, USER_AGENT, RateLimiter, RiotClient, RiotError,
                    fetch_champions, platform_of)
@@ -260,6 +260,23 @@ def participant_riot_id(p):
     return p.get("summonerName") or None
 
 
+def extract_stats(p, info):
+    """Oyun tarzını anlatan ayrıntılar (Riot'un 'challenges' alanından). Eksik alanlar atlanır."""
+    ch = p.get("challenges") or {}
+    minutes = max((info.get("gameDuration") or 0) / 60, 1)
+    stats = {
+        "dmg_share": ch.get("teamDamagePercentage"),         # takım hasarındaki pay (0-1)
+        "taken_share": ch.get("damageTakenOnTeamPercentage"),  # takımın aldığı hasardaki pay
+        "kp": ch.get("killParticipation"),
+        "cc_time": p.get("timeCCingOthers"),                  # rakibi CC'lediği süre (sn)
+        "immobilize": ch.get("enemyChampionImmobilizations"),
+        "solo_kills": ch.get("soloKills"),
+        "cs_pm": (p.get("totalMinionsKilled", 0) + p.get("neutralMinionsKilled", 0)) / minutes,
+        "vision_pm": ch.get("visionScorePerMinute"),
+    }
+    return {k: round(v, 3) for k, v in stats.items() if isinstance(v, (int, float))}
+
+
 def save_match(store, match_id, puuid, info):
     """Bir maçtan hesabın kendi satırını ve aynı takımdaki 4 oyuncuyu kaydeder."""
     participants = info.get("participants", [])
@@ -268,7 +285,7 @@ def save_match(store, match_id, puuid, info):
         return
     store.add_match(match_id, puuid, me["championName"], me.get("teamPosition") or None,
                     me["kills"], me["deaths"], me["assists"], me["win"],
-                    info["gameCreation"], info["queueId"])
+                    info["gameCreation"], info["queueId"], extract_stats(me, info))
     for p in participants:
         mate = p.get("puuid")
         riot_id = participant_riot_id(p)
@@ -296,21 +313,27 @@ def link_suggested_account(store, mate_puuid, profile_name=None, profile_id=None
 
 
 def update_account(client, store, account, max_matches=100, progress=None):
-    """Hesabın yeni maçlarını ve mastery verisini çeker. progress(yapılan, toplam) çağrılır."""
+    """Hesabın yeni maçlarını ve mastery verisini çeker. progress(yapılan, toplam) çağrılır.
+
+    Ayrıntılı istatistiği olmayan eski SR maçları da bir kez yeniden indirilir.
+    """
     puuid = account["puuid"]
     known = store.known_match_ids(puuid)
     new_ids = []
     platform = None
+    # Maç ID sayfaları ucuzdur (100 maçta 1 istek); derinlik artırılınca eski maçlara da inmek için
+    # bilinen maça rastlayınca durmuyoruz, sadece geçmişin sonunda duruyoruz.
     for start in range(0, max_matches, 100):
-        ids = client.match_ids(puuid, start=start, count=min(100, max_matches - start))
+        count = min(100, max_matches - start)
+        ids = client.match_ids(puuid, start=start, count=count)
         platform = platform or next((p for p in map(platform_of, ids) if p), None)
-        fresh = [i for i in ids if i not in known]
-        new_ids += fresh
-        if len(ids) < 100 or len(fresh) < len(ids):
-            break  # geçmişin sonuna ya da zaten bilinen maçlara ulaştık
+        new_ids += [i for i in ids if i not in known]
+        if len(ids) < count:
+            break
+    to_fetch = new_ids + store.matches_missing_stats(puuid, sorted(SR_QUEUES))
     if progress:
-        progress(0, len(new_ids))
-    for n, match_id in enumerate(new_ids, 1):
+        progress(0, len(to_fetch))
+    for n, match_id in enumerate(to_fetch, 1):
         match = client.match(match_id)
         info = (match or {}).get("info", {})
         if info:
@@ -318,7 +341,7 @@ def update_account(client, store, account, max_matches=100, progress=None):
         if n % 10 == 0:
             store.db.commit()
         if progress:
-            progress(n, len(new_ids))
+            progress(n, len(to_fetch))
     store.db.commit()
     # Mastery sunucuya özeldir; hesabın sunucusu maç ID'sinden (TR1_...) anlaşılır
     rows = [(store.champion_by_numeric_id(m["championId"]), m["championPoints"],
@@ -328,11 +351,12 @@ def update_account(client, store, account, max_matches=100, progress=None):
     return len(new_ids)
 
 
-def team_brief(store, profiles):
+def team_brief(store, profiles, mode="karma"):
     """5 profil için Claude brief'i: havuzlar + birlikte oynanan maçlardan ikililer."""
     pools = [load_pool(store, p) for p in profiles]
     shared = shared_matches(store.shared_rows([p["id"] for p in profiles]))
-    return build_prompt(pools, store.champion_names(), shared, {p["id"]: p["name"] for p in profiles})
+    return build_prompt(pools, store.champion_names(), shared, {p["id"]: p["name"] for p in profiles},
+                        mode=mode)
 
 
 def load_pool(store, profile):
