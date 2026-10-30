@@ -3,7 +3,7 @@ import os
 import time
 
 from .pool import build_pool
-from .riot import RateLimiter, RiotClient, RiotError, fetch_champions
+from .riot import RateLimiter, RiotClient, RiotError, fetch_champions, platform_of
 from .store import split_roles
 
 DATA_DIR = "data"
@@ -64,13 +64,57 @@ def add_account(store, client, profile_id, riot_id):
     return full_id
 
 
+def participant_riot_id(p):
+    name, tag = p.get("riotIdGameName"), p.get("riotIdTagline")
+    if name and tag:
+        return f"{name}#{tag}"
+    return p.get("summonerName") or None
+
+
+def save_match(store, match_id, puuid, info):
+    """Bir maçtan hesabın kendi satırını ve aynı takımdaki 4 oyuncuyu kaydeder."""
+    participants = info.get("participants", [])
+    me = next((p for p in participants if p.get("puuid") == puuid), None)
+    if me is None:
+        return
+    store.add_match(match_id, puuid, me["championName"], me.get("teamPosition") or None,
+                    me["kills"], me["deaths"], me["assists"], me["win"],
+                    info["gameCreation"], info["queueId"])
+    for p in participants:
+        mate = p.get("puuid")
+        riot_id = participant_riot_id(p)
+        if p.get("teamId") != me.get("teamId") or mate in (puuid, None, "BOT") or not riot_id:
+            continue
+        store.add_teammate(match_id, puuid, mate, riot_id, p.get("championName"),
+                           p.get("teamPosition") or None, p.get("win"),
+                           info["gameCreation"], info["queueId"])
+
+
+def link_suggested_account(store, mate_puuid, profile_name=None, profile_id=None):
+    """Arkadaş önerisini API çağrısı yapmadan yeni ya da mevcut bir profile bağlar."""
+    riot_id = store.mate_riot_id(mate_puuid)
+    if riot_id is None:
+        raise KeyError("Bu oyuncu maç verisinde bulunamadı.")
+    if profile_id is None:
+        name = (profile_name or riot_id.split("#")[0]).strip()
+        if not name:
+            raise ValueError("Profil adı boş olamaz.")
+        profile_id = store.create_profile(name)
+    else:
+        profile_id = store.profile(int(profile_id))["id"]
+    store.add_account(mate_puuid, riot_id, profile_id)
+    return profile_id, riot_id
+
+
 def update_account(client, store, account, max_matches=100, progress=None):
     """Hesabın yeni maçlarını ve mastery verisini çeker. progress(yapılan, toplam) çağrılır."""
     puuid = account["puuid"]
     known = store.known_match_ids(puuid)
     new_ids = []
+    platform = None
     for start in range(0, max_matches, 100):
         ids = client.match_ids(puuid, start=start, count=min(100, max_matches - start))
+        platform = platform or next((p for p in map(platform_of, ids) if p), None)
         fresh = [i for i in ids if i not in known]
         new_ids += fresh
         if len(ids) < 100 or len(fresh) < len(ids):
@@ -80,18 +124,16 @@ def update_account(client, store, account, max_matches=100, progress=None):
     for n, match_id in enumerate(new_ids, 1):
         match = client.match(match_id)
         info = (match or {}).get("info", {})
-        me = next((p for p in info.get("participants", []) if p["puuid"] == puuid), None)
-        if me is not None:
-            store.add_match(match_id, puuid, me["championName"], me.get("teamPosition") or None,
-                            me["kills"], me["deaths"], me["assists"], me["win"],
-                            info["gameCreation"], info["queueId"])
+        if info:
+            save_match(store, match_id, puuid, info)
         if n % 10 == 0:
             store.db.commit()
         if progress:
             progress(n, len(new_ids))
     store.db.commit()
+    # Mastery sunucuya özeldir; hesabın sunucusu maç ID'sinden (TR1_...) anlaşılır
     rows = [(store.champion_by_numeric_id(m["championId"]), m["championPoints"],
-             m["championLevel"], m.get("lastPlayTime")) for m in client.masteries(puuid)]
+             m["championLevel"], m.get("lastPlayTime")) for m in client.masteries(puuid, platform)]
     store.set_mastery(puuid, rows)
     store.mark_updated(puuid, int(time.time()))
     return len(new_ids)

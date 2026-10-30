@@ -128,6 +128,80 @@ class StoreAndPromptTest(unittest.TestCase):
             store.profile("yok")
 
 
+def participant(puuid, name, team, win, champ="Ahri", pos="MIDDLE"):
+    game_name, tag = name.split("#")
+    return {"puuid": puuid, "riotIdGameName": game_name, "riotIdTagline": tag, "teamId": team,
+            "win": win, "championName": champ, "teamPosition": pos,
+            "kills": 5, "deaths": 2, "assists": 7}
+
+
+class FakeClient:
+    """Riot API yerine hazır maçlar döner. matches: {match_id: [katılımcılar]}."""
+
+    def __init__(self, matches):
+        self.matches = matches
+        self.mastery_platforms = []
+
+    def match_ids(self, puuid, start=0, count=100):
+        ids = [m for m, parts in self.matches.items() if any(p["puuid"] == puuid for p in parts)]
+        return ids[start:start + count]
+
+    def match(self, match_id):
+        return {"info": {"gameCreation": NOW, "queueId": 420, "participants": self.matches[match_id]}}
+
+    def masteries(self, puuid, platform=None):
+        self.mastery_platforms.append(platform)
+        return [{"championId": 103, "championPoints": 50_000, "championLevel": 5}]
+
+
+def friend_matches():
+    """Ben 5 maç: Ayşe 5'inde, Can 3'ünde yanımda; Rakip 4 kez karşı takımda."""
+    matches = {}
+    for i in range(5):
+        parts = [participant("me", "Oqila#4310", 100, i != 0),
+                 participant("ayse", "Ayşe#TR1", 100, i != 0, "Yasuo")]
+        if i < 3:
+            parts.append(participant("can", "Can#TR1", 100, i != 0, "MissFortune", "BOTTOM"))
+        parts.append(participant(f"random{i}", f"Rastgele{i}#TR1", 100, i != 0))
+        if i < 4:
+            parts.append(participant("rakip", "Rakip#TR1", 200, i == 0))
+        matches[f"TR1_{i}"] = parts
+    return matches
+
+
+class FriendDiscoveryTest(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+        self.addCleanup(self.store.close)
+        self.store.set_champions("15.1.1", [(103, "Ahri", "Ahri")])
+        self.me = self.store.create_profile("Ben")
+        self.store.add_account("me", "Oqila#4310", self.me)
+        self.client = FakeClient(friend_matches())
+        service.update_account(self.client, self.store, self.store.accounts(self.me)[0])
+
+    def test_teammates_suggested_enemies_and_randoms_ignored(self):
+        friends = self.store.suggest_friends(3)
+        self.assertEqual([(f["riot_id"], f["games"], f["wins"]) for f in friends],
+                         [("Ayşe#TR1", 5, 4), ("Can#TR1", 3, 2)])
+        self.assertEqual(friends[0]["champions"], ["Yasuo"])
+        self.assertEqual(self.client.mastery_platforms, ["tr1"])  # sunucu maç ID'sinden
+        self.assertEqual(self.store.profile_mastery(self.me)[0]["champion"], "Ahri")
+
+    def test_linking_removes_suggestion_and_shared_matches_count_once(self):
+        pid, riot_id = service.link_suggested_account(self.store, "ayse", profile_name="Ayşe")
+        self.assertEqual(riot_id, "Ayşe#TR1")
+        # Ayşe'nin kendi geçmişi de aynı 5 maçı içerir; Can yine 3 maç sayılmalı (6 değil)
+        service.update_account(self.client, self.store, self.store.accounts(pid)[0])
+        friends = self.store.suggest_friends(3)
+        self.assertEqual([(f["riot_id"], f["games"]) for f in friends], [("Can#TR1", 3)])
+
+    def test_link_as_smurf_to_existing_profile(self):
+        service.link_suggested_account(self.store, "can", profile_id=self.me)
+        self.assertEqual(len(self.store.accounts(self.me)), 2)
+        with self.assertRaises(KeyError):
+            service.link_suggested_account(self.store, "yok")
+
+
 class RateLimiterTest(unittest.TestCase):
     def test_waits_when_window_full(self):
         t = [0.0]
@@ -215,6 +289,25 @@ class WebApiTest(unittest.TestCase):
         self.assertEqual(code, 200)
         code, _ = self.call("GET", f"/api/profiles/{created['id']}")
         self.assertEqual(code, 404)
+
+    def test_friend_suggestions_endpoint(self):
+        store = Store(self.db)
+        me = store.create_profile("Ben")
+        store.add_account("me", "Oqila#4310", me)
+        service.update_account(FakeClient(friend_matches()), store, store.accounts(me)[0])
+        store.close()
+
+        code, state = self.call("GET", "/api/state")
+        self.assertEqual([f["riot_id"] for f in state["friends"]], ["Ayşe#TR1", "Can#TR1"])
+        self.assertEqual(state["friends"][0]["winrate"], 80)
+        code, state2 = self.call("GET", "/api/state?min=2")
+        self.assertEqual(len(state2["friends"]), 2)
+
+        code, r = self.call("POST", "/api/friends", {"puuid": "ayse", "name": "Ayşe"})
+        self.assertEqual((code, r["riot_id"]), (200, "Ayşe#TR1"))
+        code, state = self.call("GET", "/api/state")
+        self.assertEqual([f["riot_id"] for f in state["friends"]], ["Can#TR1"])
+        self.assertIn("Ayşe", [p["name"] for p in state["profiles"]])
 
     def test_non_json_post_is_rejected(self):
         code, _ = self.call("POST", "/api/profiles", {"name": "X"}, content_type="text/plain")

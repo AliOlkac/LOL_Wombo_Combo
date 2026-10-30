@@ -25,14 +25,14 @@ python -m wombo arayuz
 Windows'ta `baslat.bat` dosyasına çift tıklamak da aynı işi görür. Tarayıcıda `http://127.0.0.1:8765` açılır. Arayüz yalnızca senin bilgisayarından erişilebilir.
 
 1. Sağ üstteki **Anahtar** düğmesinden Riot API anahtarını kaydet. Anahtarı https://developer.riotgames.com adresinden alırsın. Geliştirici anahtarı 24 saatte bir yenilenmeli; süresi geçince düğme sarıya döner.
-2. **Profil ekle**: arkadaşın adı ve Riot ID'si (`İsim#TR1`).
-3. **Herkesi güncelle**: maç geçmişlerini çeker. İlerleme üstte görünür.
+2. **Kendi profilini ekle** (adın ve Riot ID'n, ör. `Oqila#4310`) ve **Herkesi güncelle**'ye bas. İlerleme üstte görünür.
+3. **Önerilen arkadaşlar**: Senin maçlarında aynı takımda en az 3 kez görünen oyuncular burada listelenir. Bunlar büyük ihtimalle premade arkadaşların. Adını yazıp **Ekle**'ye basarsın. Biri zaten ekli bir arkadaşının smurf'üyse, açılır listeden o profili seçersin. Sonra tekrar **Herkesi güncelle**.
 4. **Detay** panelinde şunları yapabilirsin:
    - Rolleri işaretle. Her tıklama sırayla değiştirir: normal → tercih eder ✓ → oynamaz ✕.
    - Not yaz (ör. "tank sever").
    - Smurf hesap ekle.
    - Havuza elle şampiyon ekle (ör. "Wukong, eski main").
-5. 5 kişiyi **Takıma ekle** → **Brief oluştur** → **Kopyala** → Claude'a yapıştır.
+5. 5 kişiyi **Takıma ekle** → **Brief oluştur** → **Kopyala** → Claude ile olan sohbete yapıştır. Claude API anahtarı gerekmez.
 
 Anahtar `data/riot_key.txt` dosyasında, veriler `data/wombo.db` dosyasında durur. `data/` klasörü git'e girmez.
 
@@ -45,6 +45,8 @@ python -m wombo anahtar RGAPI-...
 python -m wombo ekle Ali "Ali#TR1"            # profil yoksa oluşturur
 python -m wombo ekle Ali "AliSmurf#TR1"       # aynı profile ikinci hesap
 python -m wombo guncelle                      # herkes (ya da: guncelle Ali Veli)
+python -m wombo arkadaslar                    # seninle sık oynayanları listele
+python -m wombo arkadaslar --ekle 1 --ad Ayşe # listedeki 1 numarayı profil yap
 python -m wombo liste
 python -m wombo havuz Ali
 python -m wombo rol Ali --tercih top,jg --oynamaz sup --not "tank sever"
@@ -57,6 +59,15 @@ Sunucu varsayılan olarak `tr1`. Değiştirmek için: `python -m wombo --sunucu 
 ## Veri çekme süresi
 
 Geliştirici anahtarının limiti 2 dakikada 100 istek. Bir hesabın ilk güncellemesi (100 maç) yaklaşık **2 dakika** sürer. 10 arkadaş için ilk tam güncelleme bu yüzden 20-25 dakika sürebilir. Sonraki güncellemelerde yalnızca yeni maçlar indirilir, birkaç saniyede biter.
+
+## Arkadaş keşfi nasıl çalışıyor?
+
+Her maçta senin takımındaki 4 oyuncunun Riot ID'si ve şampiyonu kaydedilir. Aynı oyuncu son maçlarında 3 veya daha fazla kez yanında çıkıyorsa büyük ihtimalle premade arkadaşındır. Rastgele eşleşen birinin 100 maçta 3 kez yanına düşmesi çok nadirdir.
+
+- Rakip takımdaki oyuncular sayılmaz.
+- Aynı maçı iki hesabın da görmüşse (ör. sen ve zaten ekli bir arkadaşın) o maç bir kez sayılır.
+- Eklediğin her arkadaşın maçları da taranır. Böylece arkadaşlarının birlikte oynadığı, senin daha az oynadığın kişiler de öneride çıkar.
+- Eklenen hesabın sunucusu maç ID'sinden (`TR1_...`) otomatik anlaşılır, mastery verisi doğru sunucudan çekilir.
 
 ## Havuz nasıl hesaplanıyor?
 

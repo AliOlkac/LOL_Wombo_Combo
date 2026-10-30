@@ -109,9 +109,16 @@ class RiotClient:
     def match(self, match_id):
         return self._get(self.region, f"/lol/match/v5/matches/{match_id}")
 
-    def masteries(self, puuid):
-        return self._get(self.platform,
-                         f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}") or []
+    def masteries(self, puuid, platform=None):
+        """platform verilmezse istemcinin sunucusu kullanılır (ör. maç ID'sinden 'tr1')."""
+        host = platform if platform in PLATFORM_TO_REGION else self.platform
+        return self._get(host, f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}") or []
+
+
+def platform_of(match_id):
+    """'TR1_1234567' -> 'tr1'. Tanınmayan biçimde None."""
+    prefix = match_id.split("_", 1)[0].lower()
+    return prefix if prefix in PLATFORM_TO_REGION else None
 
 
 def fetch_champions():

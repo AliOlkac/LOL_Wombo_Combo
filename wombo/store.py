@@ -31,6 +31,18 @@ CREATE TABLE IF NOT EXISTS matches (
     queue_id INTEGER,
     PRIMARY KEY (match_id, puuid)
 );
+CREATE TABLE IF NOT EXISTS teammates (
+    match_id TEXT NOT NULL,
+    puuid TEXT NOT NULL,            -- bizim hesabımız
+    mate_puuid TEXT NOT NULL,       -- aynı takımdaki oyuncu
+    mate_riot_id TEXT NOT NULL,
+    champion TEXT,
+    position TEXT,
+    win INTEGER,
+    game_creation INTEGER,
+    queue_id INTEGER,
+    PRIMARY KEY (match_id, puuid, mate_puuid)
+);
 CREATE TABLE IF NOT EXISTS mastery (
     puuid TEXT NOT NULL,
     champion TEXT NOT NULL,
@@ -136,7 +148,7 @@ class Store:
                                (profile_id,)).fetchall()
 
     def delete_account(self, puuid, commit=True):
-        for table in ("matches", "mastery", "accounts"):
+        for table in ("matches", "teammates", "mastery", "accounts"):
             self.db.execute(f"DELETE FROM {table} WHERE puuid = ?", (puuid,))
         if commit:
             self.db.commit()
@@ -160,6 +172,51 @@ class Store:
         return self.db.execute(
             "SELECT m.* FROM matches m JOIN accounts a ON a.puuid = m.puuid WHERE a.profile_id = ?",
             (profile_id,)).fetchall()
+
+    # --- takım arkadaşları / arkadaş keşfi ---
+    def add_teammate(self, match_id, puuid, mate_puuid, mate_riot_id, champion, position, win,
+                     game_creation, queue_id):
+        self.db.execute(
+            "INSERT OR REPLACE INTO teammates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (match_id, puuid, mate_puuid, mate_riot_id, champion, position, int(win),
+             game_creation, queue_id))
+
+    def suggest_friends(self, min_games=3, limit=30):
+        """Hesaplarımızla aynı takımda en az min_games maç oynamış, henüz eklenmemiş oyuncular.
+
+        Aynı maçı iki hesabımız da görmüşse (ör. sen ve zaten ekli bir arkadaşın) tek sayılır.
+        """
+        rows = self.db.execute(
+            """
+            WITH together AS (
+                SELECT DISTINCT match_id, mate_puuid, win, game_creation
+                FROM teammates
+                WHERE mate_puuid NOT IN (SELECT puuid FROM accounts)
+            )
+            SELECT t.mate_puuid AS puuid,
+                   COUNT(*) AS games,
+                   SUM(t.win) AS wins,
+                   MAX(t.game_creation) AS last_played,
+                   (SELECT mate_riot_id FROM teammates x WHERE x.mate_puuid = t.mate_puuid
+                    ORDER BY x.game_creation DESC LIMIT 1) AS riot_id
+            FROM together t
+            GROUP BY t.mate_puuid
+            HAVING COUNT(*) >= ?
+            ORDER BY games DESC, last_played DESC
+            LIMIT ?
+            """, (min_games, limit)).fetchall()
+        result = []
+        for r in rows:
+            champs = self.db.execute(
+                "SELECT champion, COUNT(DISTINCT match_id) AS n FROM teammates WHERE mate_puuid = ? "
+                "GROUP BY champion ORDER BY n DESC LIMIT 3", (r["puuid"],)).fetchall()
+            result.append({**dict(r), "champions": [c["champion"] for c in champs]})
+        return result
+
+    def mate_riot_id(self, mate_puuid):
+        row = self.db.execute("SELECT mate_riot_id FROM teammates WHERE mate_puuid = ? "
+                              "ORDER BY game_creation DESC LIMIT 1", (mate_puuid,)).fetchone()
+        return row[0] if row else None
 
     # --- mastery ---
     def set_mastery(self, puuid, rows):

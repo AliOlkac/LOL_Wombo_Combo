@@ -11,7 +11,7 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import URLError
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from . import service
 from .pool import POSITION_NAMES, TIER_ALIASES, TIER_ORDER, parse_roles
@@ -125,10 +125,24 @@ def key_status():
 
 # --- API uçları ---
 
+def friends_json(store, index, min_games):
+    out = []
+    for f in store.suggest_friends(min_games):
+        champs = [index.get(_norm(c), (c, c)) for c in f["champions"] if c]
+        out.append({
+            "puuid": f["puuid"], "riot_id": f["riot_id"], "games": f["games"],
+            "winrate": round(100 * f["wins"] / f["games"]), "last_played": f["last_played"] // 1000,
+            "champions": [{"id": ddid, "name": name, "tier": ""} for ddid, name in champs],
+        })
+    return out
+
+
 def api_state(h, store):
     index = store.champion_index()
+    min_games = max(2, int(h.query().get("min", 3)))
     return {
         "profiles": [profile_json(store, p, index) for p in store.profiles()],
+        "friends": friends_json(store, index, min_games),
         "ddragon_version": store.ddragon_version(),
         "key": key_status(),
         "job": h.server.job.snapshot(),
@@ -194,6 +208,14 @@ def api_delete_extra(h, store, pid, champion):
     store.remove_extra(store.profile(int(pid))["id"], unquote(champion))
 
 
+def api_add_friend(h, store):
+    data = h.body()
+    profile_id, riot_id = service.link_suggested_account(
+        store, data.get("puuid") or "", profile_name=data.get("name"),
+        profile_id=data.get("profile_id") or None)
+    return {"profile_id": profile_id, "riot_id": riot_id}
+
+
 def api_start_update(h, store):
     ids = [int(i) for i in h.body().get("profile_ids") or []]
     if not service.load_api_key():
@@ -236,6 +258,7 @@ ROUTES = [
     ("DELETE", r"/api/accounts/([^/]+)", api_delete_account),
     ("POST", r"/api/profiles/(\d+)/extras", api_set_extra),
     ("DELETE", r"/api/profiles/(\d+)/extras/([^/]+)", api_delete_extra),
+    ("POST", r"/api/friends", api_add_friend),
     ("POST", r"/api/update", api_start_update),
     ("POST", r"/api/brief", api_brief),
     ("POST", r"/api/key", api_save_key),
@@ -247,6 +270,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, *args):
         pass
+
+    def query(self):
+        return {k: v[-1] for k, v in parse_qs(urlparse(self.path).query).items()}
 
     def body(self):
         if not hasattr(self, "_body"):

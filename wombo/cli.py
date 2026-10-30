@@ -51,6 +51,28 @@ def cmd_list(args, store):
             print(f"    {a['riot_id']:<28} son güncelleme: {updated}")
 
 
+def cmd_friends(args, store):
+    friends = store.suggest_friends(args.min)
+    if args.ekle is not None:
+        if not 1 <= args.ekle <= len(friends):
+            sys.exit(f"1 ile {len(friends)} arasında bir numara ver.")
+        f = friends[args.ekle - 1]
+        profile_id = store.profile(args.profil)["id"] if args.profil else None
+        pid, riot_id = service.link_suggested_account(store, f["puuid"], args.ad, profile_id)
+        print(f"{riot_id} → {store.profile(pid)['name']} profiline eklendi. Şimdi güncelle.")
+        return
+    if not friends:
+        print("Öneri yok. Önce kendi hesabını ekleyip güncelle: python -m wombo guncelle")
+        return
+    print(f"Hesaplarınla aynı takımda en az {args.min} maç oynayanlar:\n")
+    for i, f in enumerate(friends, 1):
+        wr = round(100 * f["wins"] / f["games"])
+        champs = ", ".join(c for c in f["champions"] if c)
+        print(f"{i:>2}. {f['riot_id']:<28} {f['games']:>3} maç  %{wr:<3} {champs}")
+    print("\nEklemek için: python -m wombo arkadaslar --ekle 1 --ad Ali")
+    print("Mevcut profile smurf olarak: python -m wombo arkadaslar --ekle 1 --profil Ali")
+
+
 def cmd_pool(args, store):
     pool = service.load_pool(store, store.profile(args.profil))
     print(player_section(pool, store.champion_names()))
@@ -137,6 +159,13 @@ def main(argv=None):
 
     p = sub.add_parser("liste", help="Profilleri ve hesapları listele")
     p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("arkadaslar", help="Seninle sık oynayan oyuncuları öner / ekle")
+    p.add_argument("--min", type=int, default=3, help="En az kaç maç birlikte (varsayılan 3)")
+    p.add_argument("--ekle", type=int, metavar="NO", help="Listedeki numarayı profil olarak ekle")
+    p.add_argument("--ad", help="Yeni profilin adı (varsayılan: oyun içi isim)")
+    p.add_argument("--profil", help="Yeni profil yerine bu profile hesap olarak ekle")
+    p.set_defaults(func=cmd_friends)
 
     p = sub.add_parser("havuz", help="Bir profilin şampiyon havuzunu göster")
     p.add_argument("profil")

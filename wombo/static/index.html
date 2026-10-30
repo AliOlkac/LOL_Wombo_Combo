@@ -91,6 +91,19 @@ main { max-width: 1280px; margin: 0 auto; padding: 18px 16px 120px; }
 .counts b.Main { color: var(--gold); } .counts b.Oynayabilir { color: var(--teal); } .counts b.Esneme { color: var(--stretch); }
 .card-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
 
+.friends { margin-bottom: 20px; display: none; }
+.friends.show { display: block; }
+.friends-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.friends-head h2 { margin: 0; font-size: 16px; }
+.friend { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; background: var(--panel);
+  border: 1px solid var(--line); border-left: 3px solid var(--teal); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
+.friend .who { min-width: 180px; flex: 1; }
+.friend .who b { display: block; overflow-wrap: anywhere; }
+.friend .ic { width: 28px; height: 28px; border-radius: 6px; border-width: 1px; }
+.friend form { display: flex; gap: 6px; flex-wrap: wrap; }
+.friend input { width: 140px; }
+.friend select { max-width: 190px; }
+
 .empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 28px; text-align: center; color: var(--muted); }
 .empty ol { text-align: left; display: inline-block; margin: 10px 0 0; }
 
@@ -178,6 +191,7 @@ td .ic { width: 28px; height: 28px; border-radius: 6px; }
       <button class="primary">Profil ekle</button>
     </form>
   </div>
+  <section id="friends" class="friends" aria-label="Önerilen arkadaşlar"></section>
   <div id="grid" class="grid"></div>
 </main>
 
@@ -234,6 +248,7 @@ let openId = null;
 let detail = null;
 let pollTimer = null;
 let selected = [];
+let friendMin = 3;
 try { selected = JSON.parse(localStorage.getItem("wombo.team") || "[]"); } catch (e) {}
 
 async function api(method, path, body) {
@@ -271,7 +286,7 @@ function ago(ts) {
 
 function icon(ch) {
   const initials = esc(ch.name.slice(0, 2));
-  const title = esc(`${ch.name} · ${ch.tier}`);
+  const title = esc(ch.tier ? `${ch.name} · ${ch.tier}` : ch.name);
   if (!state.ddragon_version) return `<div class="ic ${ch.tier}" title="${title}">${initials}</div>`;
   const src = `https://ddragon.leagueoflegends.com/cdn/${state.ddragon_version}/img/champion/${encodeURIComponent(ch.id)}.png`;
   return `<div class="ic ${ch.tier}" title="${title}"><img src="${src}" alt="${esc(ch.name)}" loading="lazy"
@@ -338,8 +353,8 @@ function render() {
     grid.innerHTML = `<div class="empty" style="grid-column:1/-1">
       <strong>Henüz profil yok.</strong>
       <ol><li>Sağ üstten Riot API anahtarını kaydet.</li>
-      <li>Her arkadaşın için adını ve Riot ID'sini yazıp profil ekle.</li>
-      <li>"Herkesi güncelle" ile maç geçmişlerini çek.</li>
+      <li>Kendi profilini ekle (adın + Riot ID'n) ve "Herkesi güncelle"ye bas.</li>
+      <li>Seninle sık oynayan arkadaşların "Önerilen arkadaşlar"da çıkar, tek tıkla ekle ve tekrar güncelle.</li>
       <li>5 kişiyi takıma ekle, brief'i oluştur ve Claude'a yapıştır.</li></ol></div>`;
   } else {
     grid.innerHTML = state.profiles.map(card).join("");
@@ -364,6 +379,31 @@ function render() {
   }
   chip.innerHTML = `<span class="dot ${cls}"></span><span>${esc(text)}</span>`;
   renderJob(state.job);
+  renderFriends();
+}
+
+function renderFriends() {
+  const box = $("#friends");
+  if (!state.profiles.some(p => p.accounts.length)) { box.className = "friends"; return; }
+  const opts = state.profiles.map(p => `<option value="${p.id}">${esc(p.name)} profiline (smurf)</option>`).join("");
+  const rows = state.friends.map(f => `<div class="friend">
+      <div class="who"><b>${esc(f.riot_id)}</b>
+        <span class="small muted">${f.games} maç birlikte · %${f.winrate} kazanma · ${ago(f.last_played)}</span></div>
+      <div class="icons">${f.champions.map(icon).join("")}</div>
+      <form data-friend="${esc(f.puuid)}">
+        <input name="name" value="${esc(f.riot_id.split("#")[0])}" maxlength="40" aria-label="Profil adı">
+        <select name="profile_id" aria-label="Nereye eklensin"><option value="">Yeni profil</option>${opts}</select>
+        <button class="primary">Ekle</button>
+      </form>
+    </div>`).join("");
+  box.className = "friends show";
+  box.innerHTML = `<div class="friends-head">
+      <h2>Önerilen arkadaşlar</h2>
+      <span class="small muted">Hesaplarınla aynı takımda en az ${friendMin} maç oynayanlar</span>
+      <div class="spacer"></div>
+      <button class="ghost small" id="friendMin">${friendMin === 3 ? "2 maç olanları da göster" : "Sadece 3+ maç"}</button>
+    </div>
+    ${rows || `<div class="small muted">Henüz öneri yok. Hesaplar güncellenince birlikte oynadığın oyuncular burada çıkar.</div>`}`;
 }
 
 function renderJob(job) {
@@ -381,7 +421,7 @@ function renderJob(job) {
 }
 
 async function load() {
-  state = await api("GET", "/api/state");
+  state = await api("GET", `/api/state?min=${friendMin}`);
   saveSelection();
   render();
   if (state.job.running) startPolling();
@@ -513,6 +553,7 @@ document.addEventListener("click", e => {
   if (t.dataset.pick) return toggleSelect(Number(t.dataset.pick));
   if (t.dataset.open) return run(() => openDrawer(Number(t.dataset.open)));
   if (t.id === "closeDrawer") return closeDrawer();
+  if (t.id === "friendMin") { friendMin = friendMin === 3 ? 2 : 3; return run(load); }
   if (t.dataset.role && detail) {
     const r = t.dataset.role;
     let pref = detail.preferred_roles.filter(x => x !== r);
@@ -541,7 +582,13 @@ document.addEventListener("submit", e => {
   e.preventDefault();
   const f = e.target;
   const data = Object.fromEntries(new FormData(f));
-  if (f.id === "addAccount") {
+  if (f.dataset.friend) {
+    run(async () => {
+      const r = await api("POST", "/api/friends", { puuid: f.dataset.friend, name: data.name, profile_id: data.profile_id });
+      toast(`${r.riot_id} eklendi. Verisini çekmek için güncelle.`);
+      await load();
+    });
+  } else if (f.id === "addAccount") {
     refreshAfter(async () => {
       const r = await api("POST", `/api/profiles/${detail.id}/accounts`, data);
       toast(`${r.riot_id} eklendi. Şimdi güncelle.`);
